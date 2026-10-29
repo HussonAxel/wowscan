@@ -1,0 +1,18 @@
+[package]
+name = "wowscan-cli"
+description = "wowscan en ligne de commande"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "wowscan"
+path = "src/main.rs"
+
+[dependencies]
+wowscan-core.workspace = true
+anyhow.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "6"
+tokio.workspace = true
