@@ -10,7 +10,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -61,21 +60,7 @@ function RootLayout() {
                     )}
                   </NavItem>
                   <NavItem to="/sets" icon={<Shirt />} label={t('nav.sets')} />
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarGroup>
-              <SidebarGroupLabel>{t('nav.soon')}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {[{ icon: <Gem />, label: t('nav.collections') }].map((item) => (
-                    <SidebarMenuItem key={item.label}>
-                      <SidebarMenuButton disabled className="opacity-50">
-                        {item.icon}
-                        <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  <NavItem to="/collections" icon={<Gem />} label={t('nav.collections')} />
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -114,7 +99,7 @@ function NavItem({
   label,
   children,
 }: {
-  to: '/' | '/sets' | '/settings'
+  to: '/' | '/sets' | '/collections' | '/settings'
   icon: React.ReactNode
   label: string
   children?: React.ReactNode

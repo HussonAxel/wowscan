@@ -30,6 +30,7 @@ export function SettingsPage() {
       <VersionSection />
       <RealmsSection />
       <NewRealmCostSection />
+      <GameDirSection />
     </div>
   )
 }
@@ -246,6 +247,53 @@ function NewRealmCostSection() {
       }
     >
       {null}
+    </Section>
+  )
+}
+
+function GameDirSection() {
+  const { t } = useTranslation()
+  const { gameDir } = useSettings()
+  const [draft, setDraft] = useState(gameDir)
+  const status = useQuery({ queryKey: ['collection', gameDir], queryFn: () => api.collectionStatus(gameDir || null) })
+  const found = status.data?.gameDir
+  return (
+    <Section
+      title={t('settings.gameDir.title')}
+      description={t('settings.gameDir.description')}
+      aside={
+        status.data &&
+        (found ? (
+          <Badge variant="outline" className="border-primary/30 text-primary">
+            <CircleCheck />
+            {t('settings.gameDir.found')}
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground">
+            <CircleDashed />
+            {t('settings.gameDir.notFound')}
+          </Badge>
+        ))
+      }
+    >
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          settings.update({ gameDir: draft.trim() })
+        }}
+      >
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={found ?? t('settings.gameDir.placeholder')}
+          className="font-mono text-xs"
+        />
+        <Button type="submit" variant="outline" disabled={draft.trim() === gameDir}>
+          {t('settings.gameDir.save')}
+        </Button>
+      </form>
+      {found && <p className="truncate font-mono text-xs text-muted-foreground">{found}</p>}
     </Section>
   )
 }

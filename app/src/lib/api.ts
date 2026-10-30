@@ -1,6 +1,7 @@
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core'
 
 import type {
+  CollectionStatus,
   CommandError,
   ConnectedRealm,
   ItemInfo,
@@ -11,6 +12,7 @@ import type {
   PlanInput,
   ScanEvent,
   ScanResult,
+  SetCollection,
   SetDetails,
   SetSummary,
   Variant,
@@ -28,6 +30,13 @@ export interface Api {
   variantLabels(): Promise<Record<number, LocalizedString>>
   searchSets(query: string): Promise<SetSummary[]>
   setDetails(id: number): Promise<SetDetails | null>
+  /** Objets qui donnent chacune de ces apparences. */
+  appearanceItems(ids: number[]): Promise<Record<number, number[]>>
+  /** Dossier du jeu (deviné si `gameDir` est vide), addon et dernier export. */
+  collectionStatus(gameDir: string | null): Promise<CollectionStatus>
+  installAddon(gameDir: string | null): Promise<CollectionStatus>
+  /** Progression de chaque ensemble d'après l'export de l'addon. */
+  collectionSets(gameDir: string | null): Promise<SetCollection[]>
   connectedRealms(): Promise<ConnectedRealm[]>
   itemInfos(ids: number[]): Promise<Record<number, ItemInfo>>
   scan(ids: number[], onEvent: (event: ScanEvent) => void): Promise<ScanResult>
@@ -44,6 +53,10 @@ const tauriApi: Api = {
   variantLabels: () => invoke('variant_labels'),
   searchSets: (query) => invoke('search_sets', { query }),
   setDetails: (id) => invoke('set_details', { id }),
+  appearanceItems: (ids) => invoke('appearance_items', { ids }),
+  collectionStatus: (gameDir) => invoke('collection_status', { gameDir }),
+  installAddon: (gameDir) => invoke('install_addon', { gameDir }),
+  collectionSets: (gameDir) => invoke('collection_sets', { gameDir }),
   connectedRealms: () => invoke('connected_realms'),
   itemInfos: (ids) => invoke('item_infos', { ids }),
   scan: (ids, onEvent) => {

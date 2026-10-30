@@ -27,6 +27,13 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("dossier de World of Warcraft inaccessible ({path}) : {source}")]
+    Game {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl Error {
@@ -39,6 +46,7 @@ impl Error {
             Self::Api { .. } => "api",
             Self::Json { .. } | Self::Table { .. } => "bad_response",
             Self::Cache { .. } => "cache",
+            Self::Game { .. } => "game_folder",
         }
     }
 }

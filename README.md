@@ -9,6 +9,7 @@ Interface en français et en anglais.
 ## Ce que fait la version actuelle
 
 - **Versions exactes** : un même objet existe en Normal, Héroïque, Mythique… avec des apparences différentes. wowscan les sépare grâce aux tables du jeu et garde la version demandée (`?bonus=` d'un lien Wowhead, bonus d'un lien en jeu). Sans version précisée, toutes les versions sont proposées et une préférence (*Paramètres → Version par défaut*) choisit laquelle présélectionner.
+- **Collections** : l'addon WowScan (dossier `addon/`, installé depuis l'app) exporte en jeu les apparences déjà débloquées du compte. L'app compare avec tous les ensembles, par emplacement comme le jeu, filtre par classe de tes personnages, extension et avancement, et dit pour chaque pièce manquante d'où elle vient (butin de boss avec le boss et l'instance, marchand, quête, métier…). Un clic scanne les pièces manquantes : coût total, pièces en vente et meilleur royaume pour chacune. Le jeu n'écrit l'export qu'au `/reload` ou à la déconnexion.
 - **Ensembles** : recherche par nom (français ou anglais) d'un ensemble de l'onglet *Collections → Ensembles*. Chaque pièce est cherchée par son apparence : n'importe quel objet qui la donne convient, la liste d'achat prend le moins cher.
 - **Copier-coller depuis le jeu** : une ligne du chat collée dans la liste (ou n'importe où sur la page) est lue ; horodatage, canal et joueur sont ignorés. Le jeu ne copie que `[Nom]`, sans la version : les noms sont retrouvés par la recherche de l'API et toutes leurs versions proposées. Pour garder la version exacte, utilise [ce fork de Wowhead Quick Link](https://github.com/HussonAxel/wowhead-quick-link) : survole un objet, Ctrl+C, et le lien copié contient ses bonus.
 - **Scan à la demande** : colle des identifiants d'objets, des liens Wowhead ou des liens en jeu. Chercher 1 ou 200 objets prend le même temps : le coût vient du téléchargement des enchères des ~90 groupes de royaumes, pas du nombre d'objets.
@@ -63,12 +64,13 @@ crates/core/     moteur Rust : client API Blizzard, enchères, cache, fiches d'o
 crates/cli/      `wowscan` en ligne de commande
 app/             interface React (TanStack Router/Query/Table, Tailwind, shadcn + uiarc, beui, kobra)
 app/src-tauri/   application Tauri : pont entre l'interface et le moteur
+addon/WowScan/   addon en jeu : exporte la collection d'apparences (SavedVariables)
 ```
 
 | Sujet | Choix |
 |---|---|
 | Données | API officielle Blizzard (Game Data) pour les enchères, les royaumes et les fiches d'objets. Aucune lecture de la mémoire du jeu. |
-| Tables du jeu | Versions (bonus → libellé, modificateur d'apparence), apparences et ensembles, en CSV via [wago.tools](https://wago.tools) (données de la communauté). Téléchargées au premier usage, gardées une semaine. |
+| Tables du jeu | Versions (bonus → libellé, modificateur d'apparence), apparences, ensembles, emplacements et butins du journal des donjons, en CSV via [wago.tools](https://wago.tools) (données de la communauté). Téléchargées au premier usage, gardées une semaine. |
 | Cache | Dossier de cache de l'app ; enchères réduites (objet, prix unitaire, quantité) et compressées. |
 | Optimisation | Problème de localisation d'entrepôts : départ glouton + recherche locale (ajout, retrait, échange de royaumes). |
 | TLS | Natif sous Windows (schannel), rustls ailleurs. |
@@ -78,7 +80,8 @@ Tests : `cargo test` (moteur, dont un scan complet contre un faux serveur Blizza
 
 ## Feuille de route
 
-- **Connexion Battle.net** (OAuth) pour masquer les apparences déjà collectionnées, puis suivre les collections du compte : montures, mascottes, jouets, hauts faits, réputations.
+- **Autres collections** via l'addon : montures, mascottes, jouets.
+- **Marchands** : nom et coût des pièces vendues contre monnaie (aujourd'hui : lien Wowhead).
 - **Mascottes de combat** : les cages (objet 82800) ne sont pas encore distinguées par espèce.
 
 ## Licence

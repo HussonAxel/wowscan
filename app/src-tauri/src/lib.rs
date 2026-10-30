@@ -4,7 +4,7 @@
 //! (Gestionnaire d'identification sous Windows), jamais dans un fichier.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -12,7 +12,8 @@ use tauri::ipc::Channel;
 use tauri::{Manager, State};
 use tokio::sync::Mutex;
 use wowscan_core::cache::Cache;
-use wowscan_core::gamedata::{GameData, Source, Variant};
+use wowscan_core::collection::{self, AddonState, Character, SetProgress};
+use wowscan_core::gamedata::{BossDrop, GameData, Source, Variant};
 use wowscan_core::items::{self, ItemInfo};
 use wowscan_core::optimize::{self, Plan, PlanInput};
 use wowscan_core::realms::{self, ConnectedRealm};
@@ -46,6 +47,10 @@ impl From<keyring::Error> for CommandError {
 impl CommandError {
     fn no_credentials() -> Self {
         Self { code: "no_credentials", message: "identifiants Blizzard non configurés".into() }
+    }
+
+    fn game_not_found() -> Self {
+        Self { code: "game_not_found", message: "dossier de World of Warcraft introuvable".into() }
     }
 }
 
@@ -190,10 +195,23 @@ struct SetSummary {
 #[serde(rename_all = "camelCase")]
 struct SetPiece {
     appearance_id: u32,
+    /// Emplacement (`InventoryType` du jeu), s'il est connu.
+    slot: Option<u8>,
     /// Objets de l'ensemble qui donnent cette apparence (versions Alliance/Horde…).
     set_sources: Vec<Source>,
-    /// Tous les objets du jeu qui donnent cette apparence, ensemble ou non.
-    all_sources: Vec<Source>,
+    /// Tous les objets du jeu qui donnent cette apparence, ensemble ou non, avec leur origine.
+    all_sources: Vec<PieceSource>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PieceSource {
+    #[serde(flatten)]
+    source: Source,
+    /// Origine (`TransmogSourceTypeEnum` : 1 boss, 2 quête, 3 marchand, 4 butin du monde…).
+    kind: u8,
+    /// Boss qui laissent tomber l'objet.
+    drops: Vec<BossDrop>,
 }
 
 #[derive(Serialize)]
@@ -234,16 +252,100 @@ async fn set_details(state: State<'_, AppState>, id: u32) -> CommandResult<Optio
             Some(piece) => piece.set_sources.push(*source),
             None => pieces.push(SetPiece {
                 appearance_id: source.appearance_id,
+                slot: data.slot(source.item_id),
                 set_sources: vec![*source],
                 all_sources: data
                     .sources(source.appearance_id)
                     .iter()
-                    .map(|&(item_id, modifier)| Source { item_id, modifier, appearance_id: source.appearance_id })
+                    .map(|&(item_id, modifier)| PieceSource {
+                        source: Source { item_id, modifier, appearance_id: source.appearance_id },
+                        kind: data.source_kind(item_id, modifier),
+                        drops: data.drops(item_id),
+                    })
                     .collect(),
             }),
         }
     }
     Ok(Some(SetDetails { summary: summary(set), pieces }))
+}
+
+/// Objets qui donnent chacune de ces apparences (pour scanner les pièces manquantes).
+#[tauri::command]
+async fn appearance_items(state: State<'_, AppState>, ids: Vec<u32>) -> CommandResult<HashMap<u32, Vec<u32>>> {
+    let data = state.gamedata().await?;
+    Ok(ids
+        .into_iter()
+        .map(|id| {
+            let mut items: Vec<u32> = data.sources(id).iter().map(|(item, _)| *item).collect();
+            items.dedup();
+            (id, items)
+        })
+        .collect())
+}
+
+/// État de la collection : dossier du jeu, addon et dernier export lu.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CollectionStatus {
+    game_dir: Option<PathBuf>,
+    addon: Option<AddonState>,
+    /// Date de l'analyse en jeu (secondes Unix), si l'addon a déjà exporté.
+    scanned_at: Option<u64>,
+    appearances: usize,
+    characters: Vec<Character>,
+}
+
+fn game_dir(hint: Option<String>) -> Option<PathBuf> {
+    collection::find_game_dir(hint.as_deref().map(Path::new))
+}
+
+fn collection_status_in(dir: Option<PathBuf>) -> CommandResult<CollectionStatus> {
+    let Some(dir) = dir else {
+        return Ok(CollectionStatus { game_dir: None, addon: None, scanned_at: None, appearances: 0, characters: Vec::new() });
+    };
+    let export = collection::read(&dir)?;
+    Ok(CollectionStatus {
+        addon: Some(collection::addon_state(&dir)),
+        scanned_at: export.as_ref().map(|e| e.scanned_at),
+        appearances: export.as_ref().map_or(0, |e| e.appearances.len()),
+        characters: export.map(|e| e.characters).unwrap_or_default(),
+        game_dir: Some(dir),
+    })
+}
+
+#[tauri::command]
+fn collection_status(game_dir: Option<String>) -> CommandResult<CollectionStatus> {
+    collection_status_in(self::game_dir(game_dir))
+}
+
+#[tauri::command]
+fn install_addon(game_dir: Option<String>) -> CommandResult<CollectionStatus> {
+    let dir = self::game_dir(game_dir).ok_or_else(CommandError::game_not_found)?;
+    collection::install_addon(&dir)?;
+    collection_status_in(Some(dir))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetCollection {
+    #[serde(flatten)]
+    summary: SetSummary,
+    #[serde(flatten)]
+    progress: SetProgress,
+}
+
+/// Progression de chaque ensemble d'après le dernier export de l'addon.
+#[tauri::command]
+async fn collection_sets(state: State<'_, AppState>, game_dir: Option<String>) -> CommandResult<Vec<SetCollection>> {
+    let dir = self::game_dir(game_dir).ok_or_else(CommandError::game_not_found)?;
+    let collected = collection::read(&dir)?.map(|e| e.appearances).unwrap_or_default();
+    let data = state.gamedata().await?;
+    Ok(data
+        .sets()
+        .iter()
+        .filter(|s| !s.pieces.is_empty())
+        .map(|set| SetCollection { summary: summary(set), progress: collection::set_progress(&data, set, &collected) })
+        .collect())
 }
 
 /// Lance un scan ; l'avancement arrive par `on_event`, le résultat à la fin.
@@ -287,6 +389,10 @@ pub fn run() {
             variant_labels,
             search_sets,
             set_details,
+            appearance_items,
+            collection_status,
+            install_addon,
+            collection_sets,
             connected_realms,
             item_infos,
             scan_items,

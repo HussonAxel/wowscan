@@ -10,10 +10,12 @@
 //! - [`optimize`] : choix des royaumes où acheter pour payer le moins cher.
 //! - [`search`] : objets retrouvés par leur nom exact (copies du chat sans liens).
 //! - [`refs`] : lecture d'identifiants, de liens Wowhead et de liens en jeu.
+//! - [`collection`] : apparences collectées (exportées par l'addon WowScan) et progression des ensembles.
 
 pub mod auctions;
 pub mod cache;
 pub mod client;
+pub mod collection;
 pub mod error;
 pub mod gamedata;
 pub mod items;

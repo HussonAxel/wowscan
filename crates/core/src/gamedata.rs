@@ -7,12 +7,13 @@
 //! - bonus → libellé affiché sous le nom (« Mythique ») et modificateur d'apparence ;
 //! - (objet, modificateur) → apparence, la vraie clé pour la transmogrification ;
 //! - apparence → tous les objets qui la donnent ;
-//! - ensemble (onglet « Ensembles » des collections) → ses pièces exactes.
+//! - ensemble (onglet « Ensembles » des collections) → ses pièces exactes ;
+//! - objet → d'où il vient (boss, quête, marchand…), quel boss le laisse et son emplacement.
 //!
 //! Elles viennent des fichiers du jeu publiés en CSV par wago.tools (données de la
 //! communauté, pas de Blizzard), sont condensées puis gardées en cache une semaine.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -25,7 +26,7 @@ const WAGO_BASE: &str = "https://wago.tools/db2";
 const CACHE_FILE: &str = "gamedata.json.gz";
 const TTL_SECS: u64 = 7 * 24 * 3600;
 /// Incrémenté quand le format du cache change, pour le reconstruire.
-const FORMAT: u32 = 1;
+const FORMAT: u32 = 2;
 
 /// Types de bonus utiles (colonne `Type` de `ItemBonus`).
 const BONUS_NAME_DESCRIPTION: u32 = 4;
@@ -74,15 +75,38 @@ pub struct Variant {
     pub labels: Vec<u32>,
 }
 
+/// Boss qui laisse tomber un objet, d'après le journal des aventures.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BossDrop {
+    pub encounter_id: u32,
+    pub encounter: LocalizedString,
+    pub instance_id: u32,
+    pub instance: LocalizedString,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Encounter {
+    name: LocalizedString,
+    instance: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Stored {
     format: u32,
     fetched_at: u64,
     bonus: HashMap<u32, BonusEffect>,
     labels: HashMap<u32, LocalizedString>,
-    /// Objet → (modificateur, apparence).
-    item_appearances: HashMap<u32, Vec<(u16, u32)>>,
+    /// Objet → (modificateur, apparence, origine), l'origine étant `TransmogSourceTypeEnum`
+    /// (1 boss, 2 quête, 3 marchand, 4 butin du monde, 7 haut fait, 8 métier…).
+    item_appearances: HashMap<u32, Vec<(u16, u32, u8)>>,
     sets: Vec<TransmogSet>,
+    /// Objet → rencontres du journal qui le donnent.
+    drops: HashMap<u32, Vec<u32>>,
+    encounters: HashMap<u32, Encounter>,
+    instances: HashMap<u32, LocalizedString>,
+    /// Pièces d'ensemble → emplacement (`InventoryType` : 1 tête, 3 épaules, 5 torse…).
+    slots: HashMap<u32, u8>,
 }
 
 pub struct GameData {
@@ -115,7 +139,7 @@ impl GameData {
     fn index(stored: Stored) -> Self {
         let mut sources: HashMap<u32, Vec<(u32, u16)>> = HashMap::new();
         for (&item, list) in &stored.item_appearances {
-            for &(modifier, appearance) in list {
+            for &(modifier, appearance, _) in list {
                 sources.entry(appearance).or_default().push((item, modifier));
             }
         }
@@ -149,10 +173,41 @@ impl GameData {
     pub fn appearance(&self, item_id: u32, modifier: u16) -> Option<u32> {
         let list = self.stored.item_appearances.get(&item_id)?;
         list.iter()
-            .find(|(m, _)| *m == modifier)
-            .or_else(|| list.iter().find(|(m, _)| *m == 0))
+            .find(|(m, _, _)| *m == modifier)
+            .or_else(|| list.iter().find(|(m, _, _)| *m == 0))
             .or_else(|| list.first())
-            .map(|(_, a)| *a)
+            .map(|(_, a, _)| *a)
+    }
+
+    /// Origine d'un objet dans une version (`TransmogSourceTypeEnum`, 0 si inconnue).
+    pub fn source_kind(&self, item_id: u32, modifier: u16) -> u8 {
+        let list = self.stored.item_appearances.get(&item_id);
+        list.and_then(|l| l.iter().find(|(m, _, _)| *m == modifier).or_else(|| l.first())).map_or(0, |(_, _, k)| *k)
+    }
+
+    /// Boss qui laissent tomber cet objet.
+    pub fn drops(&self, item_id: u32) -> Vec<BossDrop> {
+        let ids = self.stored.drops.get(&item_id).map_or(&[][..], Vec::as_slice);
+        ids.iter()
+            .filter_map(|id| {
+                let encounter = self.stored.encounters.get(id)?;
+                Some(BossDrop {
+                    encounter_id: *id,
+                    encounter: encounter.name.clone(),
+                    instance_id: encounter.instance,
+                    instance: self.stored.instances.get(&encounter.instance).cloned().unwrap_or_default(),
+                })
+            })
+            .collect()
+    }
+
+    /// Emplacement d'une pièce d'ensemble (`InventoryType`), s'il est connu.
+    pub fn slot(&self, item_id: u32) -> Option<u8> {
+        self.stored.slots.get(&item_id).copied()
+    }
+
+    pub fn sets(&self) -> &[TransmogSet] {
+        &self.stored.sets
     }
 
     /// Objets (et version) qui donnent cette apparence.
@@ -248,6 +303,14 @@ async fn download(base: &str) -> Result<Stored> {
         get("TransmogSet", Some(LOCALES[0].0)),
         get("TransmogSet", Some(LOCALES[1].0)),
     )?;
+    let (journal_items, encounters_en, encounters_fr, instances_en, instances_fr, items) = tokio::try_join!(
+        get("JournalEncounterItem", None),
+        get("JournalEncounter", Some(LOCALES[0].0)),
+        get("JournalEncounter", Some(LOCALES[1].0)),
+        get("JournalInstance", Some(LOCALES[0].0)),
+        get("JournalInstance", Some(LOCALES[1].0)),
+        get("Item", None),
+    )?;
 
     #[derive(Deserialize)]
     #[serde(rename_all = "PascalCase")]
@@ -281,14 +344,16 @@ async fn download(base: &str) -> Result<Stored> {
         modifier: u16,
         #[serde(rename = "ItemAppearanceID")]
         appearance: u32,
+        #[serde(rename = "TransmogSourceTypeEnum")]
+        kind: u8,
     }
-    let mut item_appearances: HashMap<u32, Vec<(u16, u32)>> = HashMap::new();
+    let mut item_appearances: HashMap<u32, Vec<(u16, u32, u8)>> = HashMap::new();
     let mut by_source_id: HashMap<u32, Source> = HashMap::new();
     for row in rows::<ModifiedRow>(&modified)? {
         if row.appearance == 0 {
             continue;
         }
-        item_appearances.entry(row.item).or_default().push((row.modifier, row.appearance));
+        item_appearances.entry(row.item).or_default().push((row.modifier, row.appearance, row.kind));
         by_source_id.insert(row.id, Source { item_id: row.item, modifier: row.modifier, appearance_id: row.appearance });
     }
 
@@ -355,7 +420,82 @@ async fn download(base: &str) -> Result<Stored> {
     let mut sets: Vec<TransmogSet> = sets.into_values().filter(|s| !s.name.0.is_empty()).collect();
     sets.sort_by_key(|s| s.id);
 
-    Ok(Stored { format: FORMAT, fetched_at: now(), bonus: bonus_map, labels, item_appearances, sets })
+    #[derive(Deserialize)]
+    struct JournalItemRow {
+        #[serde(rename = "JournalEncounterID")]
+        encounter: u32,
+        #[serde(rename = "ItemID")]
+        item: u32,
+    }
+    let mut drops: HashMap<u32, Vec<u32>> = HashMap::new();
+    for row in rows::<JournalItemRow>(&journal_items)? {
+        if item_appearances.contains_key(&row.item) {
+            let list = drops.entry(row.item).or_default();
+            if !list.contains(&row.encounter) {
+                list.push(row.encounter);
+            }
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct EncounterRow {
+        #[serde(rename = "ID")]
+        id: u32,
+        #[serde(rename = "Name_lang")]
+        name: String,
+        #[serde(rename = "JournalInstanceID")]
+        instance: u32,
+    }
+    let wanted: HashSet<u32> = drops.values().flatten().copied().collect();
+    let mut encounters: HashMap<u32, Encounter> = HashMap::new();
+    for ((_, locale), file) in LOCALES.iter().zip([&encounters_en, &encounters_fr]) {
+        for row in rows::<EncounterRow>(file)?.into_iter().filter(|r| wanted.contains(&r.id)) {
+            let encounter =
+                encounters.entry(row.id).or_insert_with(|| Encounter { name: LocalizedString::default(), instance: row.instance });
+            if !row.name.is_empty() {
+                encounter.name.0.insert((*locale).to_owned(), row.name);
+            }
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct InstanceRow {
+        #[serde(rename = "ID")]
+        id: u32,
+        #[serde(rename = "Name_lang")]
+        name: String,
+    }
+    let wanted: HashSet<u32> = encounters.values().map(|e| e.instance).collect();
+    let mut instances: HashMap<u32, LocalizedString> = HashMap::new();
+    for ((_, locale), file) in LOCALES.iter().zip([&instances_en, &instances_fr]) {
+        for row in rows::<InstanceRow>(file)?.into_iter().filter(|r| wanted.contains(&r.id) && !r.name.is_empty()) {
+            instances.entry(row.id).or_default().0.insert((*locale).to_owned(), row.name);
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct ItemRow {
+        #[serde(rename = "ID")]
+        id: u32,
+        #[serde(rename = "InventoryType")]
+        slot: u8,
+    }
+    let wanted: HashSet<u32> = sets.iter().flat_map(|s| &s.pieces).map(|p| p.item_id).collect();
+    let slots: HashMap<u32, u8> =
+        rows::<ItemRow>(&items)?.into_iter().filter(|r| r.slot > 0 && wanted.contains(&r.id)).map(|r| (r.id, r.slot)).collect();
+
+    Ok(Stored {
+        format: FORMAT,
+        fetched_at: now(),
+        bonus: bonus_map,
+        labels,
+        item_appearances,
+        sets,
+        drops,
+        encounters,
+        instances,
+        slots,
+    })
 }
 
 fn rows<T: DeserializeOwned>((url, text): &(String, String)) -> Result<Vec<T>> {
@@ -392,9 +532,10 @@ pub(crate) mod tests {
             ]),
             labels: labels(&[(2015, "Heroic", "Héroïque"), (13145, "Mythic", "Mythique"), (11428, "Warforged", "De guerre")]),
             item_appearances: HashMap::from([
-                (124182, vec![(0, 25447), (1, 25419), (3, 25526)]),
-                // Objet fictif qui partage l'apparence mythique.
-                (999_001, vec![(0, 25526)]),
+                (124182, vec![(0, 25447, 4), (1, 25419, 4), (3, 25526, 4)]),
+                // Objets fictifs : l'un partage l'apparence mythique, l'autre vient d'un boss.
+                (999_001, vec![(0, 25526, 3)]),
+                (999_002, vec![(3, 30000, 1)]),
             ]),
             sets: vec![TransmogSet {
                 id: 13,
@@ -406,8 +547,15 @@ pub(crate) mod tests {
                 label: Some(13145),
                 class_mask: 0,
                 expansion: 6,
-                pieces: vec![Source { item_id: 124182, modifier: 3, appearance_id: 25526 }],
+                pieces: vec![
+                    Source { item_id: 124182, modifier: 3, appearance_id: 25526 },
+                    Source { item_id: 999_002, modifier: 3, appearance_id: 30000 },
+                ],
             }],
+            drops: HashMap::from([(999_002, vec![1438])]),
+            encounters: HashMap::from([(1438, Encounter { name: labels(&[(0, "Archimonde", "Archimonde")])[&0].clone(), instance: 669 })]),
+            instances: labels(&[(669, "Hellfire Citadel", "Citadelle des Flammes infernales")]),
+            slots: HashMap::from([(124182, 6), (999_002, 1)]),
         })
     }
 
@@ -435,5 +583,19 @@ pub(crate) mod tests {
         assert_eq!(data.search_sets("wild chain", 10)[0].id, 13);
         assert!(data.search_sets("gladiator", 10).is_empty());
         assert!(data.search_sets("  ", 10).is_empty());
+    }
+
+    #[test]
+    fn origins_drops_and_slots() {
+        let data = sample();
+        assert_eq!(data.source_kind(124182, 3), 4);
+        assert_eq!(data.source_kind(999_002, 3), 1);
+        assert_eq!(data.source_kind(1, 0), 0);
+        let drops = data.drops(999_002);
+        assert_eq!(drops.len(), 1);
+        assert_eq!((drops[0].encounter_id, drops[0].instance_id), (1438, 669));
+        assert_eq!(drops[0].instance.get("fr_FR"), "Citadelle des Flammes infernales");
+        assert!(data.drops(124182).is_empty());
+        assert_eq!((data.slot(124182), data.slot(1)), (Some(6), None));
     }
 }

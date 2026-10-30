@@ -103,14 +103,60 @@ export interface SetSummary {
   appearances: number
 }
 
+/**
+ * Origine d'un objet (`TransmogSourceTypeEnum` du jeu) : 1 boss, 2 quête, 3 marchand,
+ * 4 butin du monde, 5 caché, 6 non collectable, 7 haut fait, 8 métier, 10 comptoir.
+ */
+export type SourceKind = number
+
+/** Boss du journal des aventures qui laisse tomber un objet. */
+export interface BossDrop {
+  encounterId: number
+  encounter: LocalizedString
+  instanceId: number
+  instance: LocalizedString
+}
+
+export interface PieceSource extends Source {
+  kind: SourceKind
+  drops: BossDrop[]
+}
+
 export interface SetPiece {
   appearanceId: number
+  /** Emplacement (`InventoryType` du jeu : 1 tête, 3 épaules, 5 torse…). */
+  slot: number | null
   setSources: Source[]
-  allSources: Source[]
+  allSources: PieceSource[]
 }
 
 export interface SetDetails extends SetSummary {
   pieces: SetPiece[]
+}
+
+export interface Character {
+  name: string
+  realm: string
+  /** Identifiant de classe du jeu (1 Guerrier … 13 Évocateur). */
+  classId: number
+}
+
+/** État de la collection : dossier du jeu, addon WowScan et dernier export lu. */
+export interface CollectionStatus {
+  gameDir: string | null
+  addon: 'missing' | 'outdated' | 'installed' | null
+  /** Date de l'analyse en jeu (secondes Unix). */
+  scannedAt: number | null
+  appearances: number
+  characters: Character[]
+}
+
+/** Progression d'un ensemble, par emplacement comme dans le jeu. */
+export interface SetCollection extends SetSummary {
+  collected: number
+  total: number
+  /** Apparences des pièces manquantes. */
+  missing: number[]
 }
 
 export interface ScanResult {
@@ -152,5 +198,7 @@ export interface CommandError {
     | 'bad_response'
     | 'cache'
     | 'keyring'
+    | 'game_not_found'
+    | 'game_folder'
   message: string
 }

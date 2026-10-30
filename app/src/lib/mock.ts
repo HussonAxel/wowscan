@@ -3,12 +3,14 @@
 import type { Api } from './api'
 import demo from './demo-data.json'
 import type {
+  CollectionStatus,
   ConnectedRealm,
   ItemInfo,
   ItemRef,
   ItemResult,
   LocalizedString,
   ScanEvent,
+  SetCollection,
   SetDetails,
   Variant,
 } from './types'
@@ -27,6 +29,7 @@ const fold = (text: string) =>
 const demoBonus: Record<number, { modifier: number; labels: number[] }> = {
   9080: { modifier: 1, labels: [2015] },
   9081: { modifier: 3, labels: [13145] },
+  9082: { modifier: 4, labels: [1641] },
   1799: { modifier: 3, labels: [13145] },
 }
 const demoAppearances: Record<number, Record<number, number>> = { 124182: { 0: 25447, 1: 25419, 3: 25526 } }
@@ -107,6 +110,38 @@ function demoPlanRealms(wants: Want[], owned: Set<number>, newRealmCost: number)
   }
 }
 
+/** Collection de démo : une apparence sur trois manque, sauf pour le premier ensemble, complet. */
+const demoCollected = new Set(
+  sets.flatMap((s, index) => s.pieces.map((p) => p.appearanceId).filter((a) => index === 0 || a % 3 !== 0)),
+)
+let demoAddon: CollectionStatus['addon'] = 'outdated'
+
+function demoStatus(): CollectionStatus {
+  return {
+    gameDir: 'C:\\Program Files (x86)\\World of Warcraft\\_retail_',
+    addon: demoAddon,
+    scannedAt: demo.scannedAt,
+    appearances: demoCollected.size,
+    characters: [
+      { name: 'Ayije', realm: 'Elune', classId: 3 },
+      { name: 'Funel', realm: 'Kirin Tor', classId: 9 },
+    ],
+  }
+}
+
+/** Même calcul que `set_progress` (crates/core/src/collection.rs) : par emplacement, robe = torse. */
+function demoProgress(set: SetDetails): SetCollection {
+  const slots = new Map<string, number[]>()
+  for (const piece of set.pieces) {
+    const key = piece.slot ? String(piece.slot === 20 ? 5 : piece.slot) : `a${piece.appearanceId}`
+    slots.set(key, [...(slots.get(key) ?? []), piece.appearanceId])
+  }
+  const groups = [...slots.values()]
+  const missing = groups.filter((g) => !g.some((a) => demoCollected.has(a)))
+  const { pieces: _pieces, ...summary } = set
+  return { ...summary, collected: groups.length - missing.length, total: groups.length, missing: missing.flat() }
+}
+
 let demoCredentials = true
 
 export const mockApi: Api = {
@@ -138,6 +173,23 @@ export const mockApi: Api = {
       .map(({ pieces: _pieces, ...summary }) => summary)
   },
   setDetails: async (id) => sets.find((s) => s.id === id) ?? null,
+  appearanceItems: async (ids) =>
+    Object.fromEntries(
+      ids.map((id) => [
+        id,
+        [...new Set(sets.flatMap((s) => s.pieces).filter((p) => p.appearanceId === id).flatMap((p) => p.allSources.map((src) => src.itemId)))],
+      ]),
+    ),
+  collectionStatus: async () => demoStatus(),
+  installAddon: async () => {
+    await sleep(400)
+    demoAddon = 'installed'
+    return demoStatus()
+  },
+  collectionSets: async () => {
+    await sleep(200)
+    return sets.map(demoProgress)
+  },
   connectedRealms: async () => realms,
   itemInfos: async (ids) => Object.fromEntries(ids.flatMap((id) => (infos[id] ? [[id, infos[id]]] : []))),
   scan: async (ids, onEvent) => {

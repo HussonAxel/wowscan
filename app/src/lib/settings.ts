@@ -17,6 +17,8 @@ export interface Settings {
   targets: Target[]
   /** Version présélectionnée quand un objet est saisi sans sa version. */
   preferredVersion: PreferredVersion
+  /** Dossier de World of Warcraft ; vide = recherche automatique. */
+  gameDir: string
 }
 
 const KEY = 'wowscan.settings'
@@ -26,6 +28,7 @@ const defaults: Settings = {
   newRealmCostGold: 0,
   targets: [],
   preferredVersion: 'cheapest',
+  gameDir: '',
 }
 
 function load(): Settings {

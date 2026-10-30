@@ -1,0 +1,10 @@
+## Interface: 120100, 120105, 120107
+## Title: WowScan
+## Notes: Exports your transmog collection for the WoWScan desktop app.
+## Notes-frFR: Exporte ta collection d'apparences pour l'application WoWScan.
+## Author: Axel Husson
+## Version: 1.0.0
+## SavedVariables: WowScanDB
+## IconTexture: Interface\Icons\INV_Chest_Cloth_17
+
+WowScan.lua

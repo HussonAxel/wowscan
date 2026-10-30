@@ -139,6 +139,12 @@ async fn mount_game_tables(server: &MockServer) {
         ("ItemNameDescription", "ID,Description_lang,Color\n2015,Heroic,65280\n13145,Mythic,-16711936\n"),
         ("TransmogSet", "Name_lang,ID,ClassMask,TrackingQuestID,Flags,TransmogSetGroupID,ItemNameDescriptionID,ParentTransmogSetID,CompleteWorldStateID,ExpansionID,PatchIntroduced,UiOrder,ConditionID\n\
             \"Vestments of Unhinged Malice\",500,0,0,0,0,13145,0,0,5,0,0,0\n"),
+        ("JournalEncounterItem", "ID,JournalEncounterID,ItemID,FactionMask,Flags,DifficultyMask,DisplaySeasonID,WorldStateExpressionID\n\
+            1,1438,124182,-1,0,0,0,0\n"),
+        ("JournalEncounter", "Name_lang,Description_lang,Map_0,Map_1,ID,JournalInstanceID,DungeonEncounterID,OrderIndex\n\
+            Archimonde,,0,0,1438,669,1799,13\n"),
+        ("JournalInstance", "ID,Name_lang,Description_lang,MapID\n669,Hellfire Citadel,,1448\n"),
+        ("Item", "ID,ClassID,SubclassID,Material,InventoryType,SheatheType\n124182,4,3,5,6,0\n"),
     ];
     for (table, csv) in tables {
         Mock::given(method("GET"))
@@ -193,6 +199,8 @@ async fn splits_items_by_version_with_game_tables() {
     let data = GameData::load_from(&cache, &format!("{}/db2", server.uri())).await.unwrap();
     assert_eq!(data.set(500).unwrap().pieces[0].appearance_id, 25526);
     assert_eq!(data.label(13145).unwrap().get("fr_FR"), "Mythic", "same table served for both locales");
+    assert_eq!(data.drops(124182)[0].instance.get("en_GB"), "Hellfire Citadel");
+    assert_eq!(data.slot(124182), Some(6));
 
     let result = scan(&client(&server, "secret"), &cache, &[124182], Some(&data), 2, |_| {}).await.unwrap();
     let variants: Vec<(Option<u32>, Money, Vec<u32>)> = result.items[0]

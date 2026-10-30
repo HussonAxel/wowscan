@@ -22,10 +22,21 @@ data = read("gamedata.json.gz")
 infos = read("items.json.gz")
 scan = json.load(open(scan_path))
 
+def drops(item):
+    out = []
+    for encounter_id in data["drops"].get(item, []):
+        encounter = data["encounters"].get(str(encounter_id))
+        if encounter:
+            out.append({
+                "encounterId": encounter_id, "encounter": slim(encounter["name"]),
+                "instanceId": encounter["instance"], "instance": slim(data["instances"].get(str(encounter["instance"]))),
+            })
+    return out
+
 sources = collections.defaultdict(list)
-for item, pairs in data["item_appearances"].items():
-    for modifier, appearance in pairs:
-        sources[appearance].append({"itemId": int(item), "modifier": modifier, "appearanceId": appearance})
+for item, triples in data["item_appearances"].items():
+    for modifier, appearance, kind in triples:
+        sources[appearance].append({"itemId": int(item), "modifier": modifier, "appearanceId": appearance, "kind": kind, "drops": drops(item)})
 
 sets, used_labels = [], set()
 for s in data["sets"]:
@@ -33,7 +44,10 @@ for s in data["sets"]:
         continue
     pieces = {}
     for p in s["pieces"]:
-        piece = pieces.setdefault(p["appearanceId"], {"appearanceId": p["appearanceId"], "setSources": [], "allSources": sources[p["appearanceId"]]})
+        piece = pieces.setdefault(p["appearanceId"], {
+            "appearanceId": p["appearanceId"], "slot": data["slots"].get(str(p["itemId"])),
+            "setSources": [], "allSources": sources[p["appearanceId"]],
+        })
         piece["setSources"].append(p)
     sets.append({
         "id": s["id"], "name": slim(s["name"]), "label": s["label"], "classMask": s["classMask"],
