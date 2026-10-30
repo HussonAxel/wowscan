@@ -60,6 +60,7 @@ function RootLayout() {
                       </SidebarMenuBadge>
                     )}
                   </NavItem>
+                  <NavItem to="/sets" icon={<Shirt />} label={t('nav.sets')} />
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -67,10 +68,7 @@ function RootLayout() {
               <SidebarGroupLabel>{t('nav.soon')}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {[
-                    { icon: <Shirt />, label: t('nav.transmog') },
-                    { icon: <Gem />, label: t('nav.collections') },
-                  ].map((item) => (
+                  {[{ icon: <Gem />, label: t('nav.collections') }].map((item) => (
                     <SidebarMenuItem key={item.label}>
                       <SidebarMenuButton disabled className="opacity-50">
                         {item.icon}
@@ -116,7 +114,7 @@ function NavItem({
   label,
   children,
 }: {
-  to: '/' | '/settings'
+  to: '/' | '/sets' | '/settings'
   icon: React.ReactNode
   label: string
   children?: React.ReactNode

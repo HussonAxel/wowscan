@@ -15,4 +15,5 @@ wowscan-core.workspace = true
 anyhow.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
+serde_json.workspace = true
 tokio.workspace = true

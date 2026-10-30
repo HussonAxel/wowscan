@@ -1,35 +1,53 @@
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { ArcScope } from '@/components/arc-scope'
 import { TagInput } from '@/components/arc/tag-input/tag-input'
-import { api } from '@/lib/api'
 import { localized, useApiLocale } from '@/lib/format'
+import { labelsText } from '@/lib/labels'
 import { settings } from '@/lib/settings'
-import type { ItemInfo } from '@/lib/types'
+import { type Target, targetKey } from '@/lib/targets'
+import type { ItemInfo, LocalizedString, Variant } from '@/lib/types'
+
+import { importText } from './import-text'
 
 /**
- * Liste d'objets à scanner. Chaque saisie (identifiant, lien Wowhead, lien en jeu,
- * ou plusieurs à la fois) est convertie en identifiants ; l'étiquette affiche ensuite le nom.
+ * Liste des cibles du scanner. Chaque saisie (lien Wowhead, lien en jeu, identifiant,
+ * ligne de chat entière) passe par `importText` ; l'étiquette affiche ensuite le nom
+ * et la version demandée.
  */
-export function ItemListInput({ ids, infos }: { ids: number[]; infos: Record<number, ItemInfo> }) {
+export function ItemListInput({
+  targets,
+  infos,
+  requested,
+  labelTexts,
+}: {
+  targets: Target[]
+  infos: Record<number, ItemInfo>
+  requested: Record<string, Variant>
+  labelTexts: Record<number, LocalizedString>
+}) {
   const { t } = useTranslation()
   const locale = useApiLocale()
-  const labelFor = (id: number) => (infos[id] ? `${localized(infos[id].name, locale)} · ${id}` : `#${id}`)
-  const tags = ids.map(labelFor)
+
+  const tags: string[] = []
+  for (const target of targets) {
+    const name = infos[target.itemId] ? localized(infos[target.itemId].name, locale) : `#${target.itemId}`
+    // Une pièce d'ensemble garde le nom de l'objet : n'importe quelle source de l'apparence convient.
+    const version =
+      target.kind === 'item' ? labelsText(requested[targetKey(target)]?.labels ?? [], labelTexts, locale) : ''
+    let tag = version ? `${name} · ${version}` : name
+    // Étiquettes uniques : la liste les compare comme du texte.
+    while (tags.includes(tag)) tag += ' ·'
+    tags.push(tag)
+  }
 
   async function onValueChange(next: string[]) {
-    const kept = ids.filter((id) => next.includes(labelFor(id)))
-    const typed = next.filter((tag) => !tags.includes(tag))
-    let added: number[] = []
-    if (typed.length) {
-      const parsed = await api.parseItems(typed.join(' '))
-      added = parsed.itemIds
-      if (parsed.unrecognized.length) {
-        toast.warning(t('scan.unrecognized', { tokens: parsed.unrecognized.join(', ') }))
-      }
+    const kept = targets.filter((_, i) => next.includes(tags[i]))
+    if (kept.length !== targets.length) settings.update({ targets: kept })
+    // Chaque nouvelle saisie est lue seule : une faute de frappe n'invalide pas les autres.
+    for (const typed of next.filter((tag) => !tags.includes(tag))) {
+      await importText(typed, t)
     }
-    settings.update({ itemIds: [...new Set([...kept, ...added])] })
   }
 
   return (

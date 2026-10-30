@@ -11,7 +11,7 @@ use wowscan_core::gamedata::GameData;
 use wowscan_core::optimize::{self, Candidate, PlanInput, Want};
 use wowscan_core::realms::{self, ConnectedRealm};
 use wowscan_core::scan::{self, ScanEvent, VariantResult};
-use wowscan_core::{BlizzardClient, Credentials, Money, Region, items, refs};
+use wowscan_core::{BlizzardClient, Credentials, Money, Region, items, refs, search};
 
 #[derive(Parser)]
 #[command(version, about = "Prix de l'hôtel des ventes de WoW sur tous les royaumes européens")]
@@ -70,6 +70,9 @@ enum Command {
         /// Nombre de royaumes affichés par objet.
         #[arg(long, default_value_t = 5)]
         top: usize,
+        /// Écrit le résultat brut en JSON (celui que reçoit l'interface) au lieu du tableau.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -109,10 +112,20 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        Command::Scan { items: inputs, owned, new_realm_cost, top } => {
-            let parsed = refs::parse_item_refs(&inputs.join(" "));
+        Command::Scan { items: inputs, owned, new_realm_cost, top, json } => {
+            let mut parsed = refs::parse_item_refs(&inputs.join(" "));
             for token in &parsed.unrecognized {
                 eprintln!("Ignoré (format inconnu) : {token}");
+            }
+            // Noms entre crochets sans lien (copie du chat) : retrouvés par leur nom exact.
+            if !parsed.names.is_empty() {
+                let found = search::find_items_by_name(&client, &cache, &parsed.names).await?;
+                for name in &parsed.names {
+                    match found.get(name).map(Vec::as_slice) {
+                        Some([]) | None => eprintln!("Aucun objet nommé « {name} »"),
+                        Some(ids) => parsed.items.extend(ids.iter().map(|&item_id| refs::ItemRef { item_id, bonus_lists: Vec::new() })),
+                    }
+                }
             }
             if parsed.items.is_empty() {
                 bail!("aucun objet reconnu");
@@ -128,6 +141,10 @@ async fn main() -> anyhow::Result<()> {
             let result =
                 scan::scan(&client, &cache, &item_ids, data.as_ref(), scan::DEFAULT_CONCURRENCY, progress).await?;
             eprintln!();
+            if json {
+                println!("{}", serde_json::to_string(&result)?);
+                return Ok(());
+            }
 
             let names: HashMap<u32, &ConnectedRealm> = result.realms.iter().map(|r| (r.id, r)).collect();
             let realm_name = |id: u32| names.get(&id).map_or_else(|| id.to_string(), |r| r.display_name(locale));

@@ -8,6 +8,7 @@
 //! - [`items`] : noms (fr/en), qualité et icône des objets.
 //! - [`scan`] : recherche d'une liste d'objets sur tous les royaumes.
 //! - [`optimize`] : choix des royaumes où acheter pour payer le moins cher.
+//! - [`search`] : objets retrouvés par leur nom exact (copies du chat sans liens).
 //! - [`refs`] : lecture d'identifiants, de liens Wowhead et de liens en jeu.
 
 pub mod auctions;
@@ -21,6 +22,7 @@ pub mod optimize;
 pub mod realms;
 pub mod refs;
 pub mod scan;
+pub mod search;
 
 pub use client::{BlizzardClient, Credentials, Region};
 pub use error::{Error, Result};

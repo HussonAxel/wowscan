@@ -5743,6 +5743,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs 6.0.0",
+ "serde_json",
  "tokio",
  "wowscan-core",
 ]

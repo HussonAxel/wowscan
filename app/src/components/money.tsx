@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import type { Copper } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -17,11 +19,13 @@ function coins(copper: Copper): [number, Coin][] {
 
 /** Prix façon jeu (12 345 ●), chiffres alignés pour les colonnes. */
 export function Money({ copper, className }: { copper: Copper; className?: string }) {
+  // Séparateur de milliers de la langue choisie (« 2 500 » en français), pas celle du système.
+  const { i18n } = useTranslation()
   return (
     <span className={cn('inline-flex items-center gap-1.5 tabular-nums whitespace-nowrap', className)}>
       {coins(copper).map(([value, coin], i) => (
         <span key={coin} className="inline-flex items-center gap-1">
-          {i === 0 ? value.toLocaleString() : String(value).padStart(2, '0')}
+          {i === 0 ? value.toLocaleString(i18n.language) : String(value).padStart(2, '0')}
           <span aria-hidden className={cn('size-2 rounded-full', coinColor[coin])} />
           <span className="sr-only">{coin}</span>
         </span>

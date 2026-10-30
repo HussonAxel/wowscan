@@ -23,6 +23,8 @@ export interface RealmPriceRow {
   auctions: number
   owned: boolean
   best: boolean
+  /** Objet à acheter, quand il diffère de l'objet affiché (plusieurs objets donnent l'apparence). */
+  note?: string
 }
 
 const features = tableFeatures({
@@ -43,15 +45,18 @@ export function RealmPriceTable({ rows, limit }: { rows: RealmPriceRow[]; limit?
           header: t('results.realm'),
           sortFn: 'alphanumeric',
           cell: ({ row }) => (
-            <span className="flex items-center gap-2">
-              <span className={cn('truncate', row.original.best && 'text-foreground font-medium')}>
-                {row.original.realm}
+            <span className="flex min-w-0 flex-col">
+              <span className="flex items-center gap-2">
+                <span className={cn('truncate', row.original.best && 'font-medium text-foreground')}>
+                  {row.original.realm}
+                </span>
+                {row.original.owned && (
+                  <Badge variant="outline" className="border-primary/30 text-primary">
+                    {t('results.owned')}
+                  </Badge>
+                )}
               </span>
-              {row.original.owned && (
-                <Badge variant="outline" className="border-primary/30 text-primary">
-                  {t('results.owned')}
-                </Badge>
-              )}
+              {row.original.note && <span className="truncate text-xs text-muted-foreground">{row.original.note}</span>}
             </span>
           ),
         }),
@@ -106,7 +111,12 @@ export function RealmPriceTable({ rows, limit }: { rows: RealmPriceRow[]; limit?
             {row.getAllCells().map((cell) => (
               <TableCell
                 key={cell.id}
-                className={cn('h-9 py-1.5', cell.column.id !== 'realm' && 'text-right tabular-nums text-muted-foreground', cell.column.id === 'price' && 'text-foreground')}
+                className={cn(
+                  'h-9 py-1.5',
+                  // `max-w-0` laisse la colonne prendre la place restante et tronquer les longs noms de royaumes.
+                  cell.column.id === 'realm' ? 'w-full max-w-0' : 'text-right tabular-nums text-muted-foreground',
+                  cell.column.id === 'price' && 'text-foreground',
+                )}
               >
                 <table.FlexRender cell={cell} />
               </TableCell>

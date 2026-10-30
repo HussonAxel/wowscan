@@ -16,7 +16,7 @@ import { api } from '@/lib/api'
 import { useErrorMessage } from '@/lib/errors'
 import { realmName, useApiLocale } from '@/lib/format'
 import { openUrl } from '@/lib/open-url'
-import { settings, useSettings } from '@/lib/settings'
+import { type PreferredVersion, settings, useSettings } from '@/lib/settings'
 
 const DEVELOPER_PORTAL = 'https://develop.battle.net/access/clients'
 
@@ -27,6 +27,7 @@ export function SettingsPage() {
       <h1 className="text-2xl font-semibold tracking-tight">{t('settings.title')}</h1>
       <CredentialsSection />
       <LanguageSection />
+      <VersionSection />
       <RealmsSection />
       <NewRealmCostSection />
     </div>
@@ -142,6 +143,34 @@ function LanguageSection() {
   )
 }
 
+function VersionSection() {
+  const { t } = useTranslation()
+  const { preferredVersion } = useSettings()
+  const choices: PreferredVersion[] = ['cheapest', 'mythic', 'heroic', 'normal', 'raidFinder']
+  return (
+    <Section
+      title={t('settings.version.title')}
+      description={t('settings.version.description')}
+      aside={
+        <Select value={preferredVersion} onValueChange={(value) => settings.update({ preferredVersion: value as PreferredVersion })}>
+          <SelectTrigger className="w-52">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {choices.map((choice) => (
+              <SelectItem key={choice} value={choice}>
+                {t(`settings.version.${choice}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      }
+    >
+      {null}
+    </Section>
+  )
+}
+
 function RealmsSection() {
   const { t } = useTranslation()
   const locale = useApiLocale()
@@ -183,7 +212,7 @@ function RealmsSection() {
                 <li key={realm.id}>
                   <label className="flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors duration-150 hover:bg-foreground/[0.04]">
                     <Checkbox checked={owned.has(realm.id)} onCheckedChange={(c) => toggle(realm.id, c === true)} />
-                    <span className="truncate">{realm.name}</span>
+                    <span className="min-w-0 truncate">{realm.name}</span>
                   </label>
                 </li>
               ))}

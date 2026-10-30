@@ -151,6 +151,16 @@ async fn item_infos(state: State<'_, AppState>, ids: Vec<u32>) -> CommandResult<
     Ok(items::item_infos(&client, &state.cache, &ids).await?)
 }
 
+/// Objets dont le nom correspond exactement, pour les copies du chat sans liens.
+#[tauri::command]
+async fn find_items_by_name(
+    state: State<'_, AppState>,
+    names: Vec<String>,
+) -> CommandResult<HashMap<String, Vec<u32>>> {
+    let client = state.client().await?;
+    Ok(wowscan_core::search::find_items_by_name(&client, &state.cache, &names).await?)
+}
+
 /// Versions demandées (apparence et libellés) pour des objets saisis avec leurs bonus.
 #[tauri::command]
 async fn resolve_variants(state: State<'_, AppState>, items: Vec<ItemRef>) -> CommandResult<Vec<Variant>> {
@@ -272,6 +282,7 @@ pub fn run() {
             save_credentials,
             clear_credentials,
             parse_items,
+            find_items_by_name,
             resolve_variants,
             variant_labels,
             search_sets,

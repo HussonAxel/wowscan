@@ -37,9 +37,27 @@ export interface ItemInfo {
   icon: string | null
 }
 
+/** Objet demandé ; ses bonus (lien Wowhead ou en jeu) désignent une version précise. */
+export interface ItemRef {
+  itemId: number
+  bonusLists: number[]
+}
+
 export interface ParsedRefs {
-  itemIds: number[]
+  items: ItemRef[]
+  /** Noms entre crochets sans lien (copie du chat sans les codes). */
+  names: string[]
+  battlePets: string[]
+  appearances: string[]
   unrecognized: string[]
+}
+
+/** Version d'un objet déduite de ses bonus. */
+export interface Variant {
+  modifier: number
+  appearanceId: number | null
+  /** Identifiants de libellés (« Mythique »…), voir `variantLabels`. */
+  labels: number[]
 }
 
 export interface PriceStats {
@@ -53,11 +71,46 @@ export interface RealmPrice {
   stats: PriceStats
 }
 
-export interface ItemResult {
-  itemId: number
+export interface VariantResult {
+  appearanceId: number | null
+  modifier: number
+  labels: number[]
   /** Objet empilable : un seul prix pour toute la région. */
   commodity: PriceStats | null
   realms: RealmPrice[]
+}
+
+export interface ItemResult {
+  itemId: number
+  /** Versions en vente, de la moins chère à la plus chère. */
+  variants: VariantResult[]
+}
+
+/** Un objet précis dans une version précise. */
+export interface Source {
+  itemId: number
+  modifier: number
+  appearanceId: number
+}
+
+export interface SetSummary {
+  id: number
+  name: LocalizedString
+  label: number | null
+  /** Bit n = classe n+1 ; 0 = toutes les classes. */
+  classMask: number
+  expansion: number
+  appearances: number
+}
+
+export interface SetPiece {
+  appearanceId: number
+  setSources: Source[]
+  allSources: Source[]
+}
+
+export interface SetDetails extends SetSummary {
+  pieces: SetPiece[]
 }
 
 export interface ScanResult {

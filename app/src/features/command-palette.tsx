@@ -1,10 +1,11 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Languages, ScanSearch, Settings, Trash2, Zap } from 'lucide-react'
+import { Languages, ScanSearch, Settings, Shirt, Trash2, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { CommandMenu, type CommandMenuAction } from '@/components/ui/command-menu'
 import { startScan } from '@/features/scan/scan-store'
 import { settings } from '@/lib/settings'
+import { targetItemIds } from '@/lib/targets'
 
 /** Palette Ctrl+K : navigation et actions courantes au clavier. */
 export function CommandPalette() {
@@ -13,6 +14,7 @@ export function CommandPalette() {
 
   const actions: CommandMenuAction[] = [
     { id: 'go-scanner', label: t('nav.scanner'), group: t('command.navigation'), icon: <ScanSearch />, action: () => void navigate({ to: '/' }) },
+    { id: 'go-sets', label: t('nav.sets'), group: t('command.navigation'), icon: <Shirt />, action: () => void navigate({ to: '/sets' }) },
     { id: 'go-settings', label: t('nav.settings'), group: t('command.navigation'), icon: <Settings />, action: () => void navigate({ to: '/settings' }) },
     {
       id: 'scan',
@@ -21,10 +23,10 @@ export function CommandPalette() {
       icon: <Zap />,
       action: () => {
         void navigate({ to: '/' })
-        startScan(settings.get().itemIds).catch(() => {})
+        startScan([...new Set(settings.get().targets.flatMap(targetItemIds))]).catch(() => {})
       },
     },
-    { id: 'clear', label: t('command.clear'), group: t('command.actions'), icon: <Trash2 />, action: () => settings.update({ itemIds: [] }) },
+    { id: 'clear', label: t('command.clear'), group: t('command.actions'), icon: <Trash2 />, action: () => settings.update({ targets: [] }) },
     {
       id: 'language',
       label: t('command.language'),

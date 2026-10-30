@@ -4,8 +4,13 @@ Application desktop (Windows) pour **World of Warcraft Retail, région Europe** 
 
 Interface en français et en anglais.
 
+![Scanner : versions d'un objet et liste d'achat](docs/screenshots/scanner.png)
+
 ## Ce que fait la version actuelle
 
+- **Versions exactes** : un même objet existe en Normal, Héroïque, Mythique… avec des apparences différentes. wowscan les sépare grâce aux tables du jeu et garde la version demandée (`?bonus=` d'un lien Wowhead, bonus d'un lien en jeu). Sans version précisée, toutes les versions sont proposées et une préférence (*Paramètres → Version par défaut*) choisit laquelle présélectionner.
+- **Ensembles** : recherche par nom (français ou anglais) d'un ensemble de l'onglet *Collections → Ensembles*. Chaque pièce est cherchée par son apparence : n'importe quel objet qui la donne convient, la liste d'achat prend le moins cher.
+- **Copier-coller depuis le jeu** : une ligne du chat collée dans la liste (ou n'importe où sur la page) est lue ; horodatage, canal et joueur sont ignorés. Le jeu ne copie que `[Nom]`, sans la version : les noms sont retrouvés par la recherche de l'API et toutes leurs versions proposées. Pour garder la version exacte, utilise [ce fork de Wowhead Quick Link](https://github.com/HussonAxel/wowhead-quick-link) : survole un objet, Ctrl+C, et le lien copié contient ses bonus.
 - **Scan à la demande** : colle des identifiants d'objets, des liens Wowhead ou des liens en jeu. Chercher 1 ou 200 objets prend le même temps : le coût vient du téléchargement des enchères des ~90 groupes de royaumes, pas du nombre d'objets.
 - **Cache horaire** : Blizzard publie un instantané par heure. Un nouveau scan dans l'heure ne retélécharge rien (requête `If-Modified-Since`, réponse `304`).
 - **Objets empilables détectés** : herbes, minerais, gemmes… ont un marché unique pour toute la région ; l'app l'indique au lieu de comparer des royaumes.
@@ -32,9 +37,11 @@ Chaque push sur `main` produit aussi l'installateur Windows dans l'onglet **Acti
 2. **Create client** : nom libre (par ex. `wowscan`). Les champs d'URL (redirection, service) ne servent pas pour l'instant.
 3. Copie le **Client ID** et le **Client secret** dans *Paramètres → API Blizzard* : l'app les vérifie auprès de Blizzard avant de les enregistrer.
 
+![Recherche d'ensembles](docs/screenshots/sets.png)
+
 ## Travailler sur l'interface sans Windows
 
-`pnpm dev` dans `app/` sert l'interface dans un navigateur avec des **données de démo** (objets fictifs, vrais noms de royaumes). Aucun identifiant n'est nécessaire.
+`pnpm dev` dans `app/` sert l'interface dans un navigateur avec des **données de démo** : un extrait d'un vrai scan (objets, ensembles, prix du 30/10/2026). Aucun identifiant n'est nécessaire. Pour les régénérer : `app/scripts/demo-data.py`.
 
 ## Ligne de commande
 
@@ -44,7 +51,9 @@ Le moteur s'utilise aussi sans interface, sur n'importe quel système :
 export WOWSCAN_CLIENT_ID=... WOWSCAN_CLIENT_SECRET=...
 cargo run -p wowscan-cli -- check
 cargo run -p wowscan-cli -- realms
-cargo run -p wowscan-cli -- scan 19019 https://www.wowhead.com/item=2589 --owned 1080,1301 --new-realm-cost 500
+cargo run -p wowscan-cli -- scan "https://www.wowhead.com/item=124182?bonus=9081" 9480 --owned 1315 --new-realm-cost 500
+cargo run -p wowscan-cli -- scan "[2. Commerce] [Arthas]: VDS [Arrache-yeux]"   # ligne de chat copiée
+cargo run -p wowscan-cli -- sets défunts élus
 ```
 
 ## Architecture
@@ -58,7 +67,8 @@ app/src-tauri/   application Tauri : pont entre l'interface et le moteur
 
 | Sujet | Choix |
 |---|---|
-| Données | API officielle Blizzard (Game Data) uniquement. Aucune lecture de la mémoire du jeu. |
+| Données | API officielle Blizzard (Game Data) pour les enchères, les royaumes et les fiches d'objets. Aucune lecture de la mémoire du jeu. |
+| Tables du jeu | Versions (bonus → libellé, modificateur d'apparence), apparences et ensembles, en CSV via [wago.tools](https://wago.tools) (données de la communauté). Téléchargées au premier usage, gardées une semaine. |
 | Cache | Dossier de cache de l'app ; enchères réduites (objet, prix unitaire, quantité) et compressées. |
 | Optimisation | Problème de localisation d'entrepôts : départ glouton + recherche locale (ajout, retrait, échange de royaumes). |
 | TLS | Natif sous Windows (schannel), rustls ailleurs. |
@@ -68,9 +78,8 @@ Tests : `cargo test` (moteur, dont un scan complet contre un faux serveur Blizza
 
 ## Feuille de route
 
-- **Apparences** : chercher par *apparence* plutôt que par objet (plusieurs objets partagent le même visuel) à partir des tables du jeu (wago.tools), et masquer les apparences déjà collectionnées.
-- **Add-on en jeu** : exporter la collection de transmogrification (API `C_TransmogCollection`, plus complète que l'API web) et afficher la liste d'achat à l'hôtel des ventes.
-- **Collections du compte** via Battle.net (OAuth) : montures, mascottes, jouets, hauts faits, réputations, et ce qu'il reste à obtenir.
+- **Connexion Battle.net** (OAuth) pour masquer les apparences déjà collectionnées, puis suivre les collections du compte : montures, mascottes, jouets, hauts faits, réputations.
+- **Mascottes de combat** : les cages (objet 82800) ne sont pas encore distinguées par espèce.
 
 ## Licence
 
