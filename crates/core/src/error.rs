@@ -18,6 +18,9 @@ pub enum Error {
         source: serde_json::Error,
     },
 
+    #[error("table du jeu illisible ({url}) : {message}")]
+    Table { url: String, message: String },
+
     #[error("cache illisible ({path}) : {source}")]
     Cache {
         path: PathBuf,
@@ -34,7 +37,7 @@ impl Error {
             Self::Http(_) => "network",
             Self::Api { status: 429, .. } => "rate_limited",
             Self::Api { .. } => "api",
-            Self::Json { .. } => "bad_response",
+            Self::Json { .. } | Self::Table { .. } => "bad_response",
             Self::Cache { .. } => "cache",
         }
     }

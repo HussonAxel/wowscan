@@ -12,10 +12,12 @@ use tauri::ipc::Channel;
 use tauri::{Manager, State};
 use tokio::sync::Mutex;
 use wowscan_core::cache::Cache;
+use wowscan_core::gamedata::{GameData, Source, Variant};
 use wowscan_core::items::{self, ItemInfo};
 use wowscan_core::optimize::{self, Plan, PlanInput};
 use wowscan_core::realms::{self, ConnectedRealm};
-use wowscan_core::refs::{self, ParsedRefs};
+use wowscan_core::model::LocalizedString;
+use wowscan_core::refs::{self, ItemRef, ParsedRefs};
 use wowscan_core::scan::{self, ScanEvent, ScanResult};
 use wowscan_core::{BlizzardClient, Credentials, Region};
 
@@ -52,6 +54,7 @@ type CommandResult<T> = Result<T, CommandError>;
 struct AppState {
     cache: Cache,
     client: Mutex<Option<Arc<BlizzardClient>>>,
+    gamedata: Mutex<Option<Arc<GameData>>>,
 }
 
 impl AppState {
@@ -65,6 +68,19 @@ impl AppState {
         let created = Arc::new(BlizzardClient::new(credentials, Region::Eu)?);
         *client = Some(created.clone());
         Ok(created)
+    }
+}
+
+impl AppState {
+    /// Tables du jeu, chargées au premier besoin (téléchargées une fois par semaine).
+    async fn gamedata(&self) -> CommandResult<Arc<GameData>> {
+        let mut data = self.gamedata.lock().await;
+        if let Some(data) = data.as_ref() {
+            return Ok(data.clone());
+        }
+        let loaded = Arc::new(GameData::load(&self.cache).await?);
+        *data = Some(loaded.clone());
+        Ok(loaded)
     }
 }
 
@@ -135,6 +151,91 @@ async fn item_infos(state: State<'_, AppState>, ids: Vec<u32>) -> CommandResult<
     Ok(items::item_infos(&client, &state.cache, &ids).await?)
 }
 
+/// Versions demandées (apparence et libellés) pour des objets saisis avec leurs bonus.
+#[tauri::command]
+async fn resolve_variants(state: State<'_, AppState>, items: Vec<ItemRef>) -> CommandResult<Vec<Variant>> {
+    let data = state.gamedata().await?;
+    Ok(items.iter().map(|i| data.variant(i.item_id, &i.bonus_lists)).collect())
+}
+
+/// Libellés de version (« Mythique »…), pour les afficher dans la langue choisie.
+#[tauri::command]
+async fn variant_labels(state: State<'_, AppState>) -> CommandResult<HashMap<u32, LocalizedString>> {
+    Ok(state.gamedata().await?.labels().clone())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetSummary {
+    id: u32,
+    name: LocalizedString,
+    label: Option<u32>,
+    class_mask: u32,
+    expansion: u32,
+    /// Nombre d'apparences distinctes (une par emplacement, en général).
+    appearances: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetPiece {
+    appearance_id: u32,
+    /// Objets de l'ensemble qui donnent cette apparence (versions Alliance/Horde…).
+    set_sources: Vec<Source>,
+    /// Tous les objets du jeu qui donnent cette apparence, ensemble ou non.
+    all_sources: Vec<Source>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetDetails {
+    #[serde(flatten)]
+    summary: SetSummary,
+    pieces: Vec<SetPiece>,
+}
+
+fn summary(set: &wowscan_core::gamedata::TransmogSet) -> SetSummary {
+    let mut appearances: Vec<u32> = set.pieces.iter().map(|p| p.appearance_id).collect();
+    appearances.sort_unstable();
+    appearances.dedup();
+    SetSummary {
+        id: set.id,
+        name: set.name.clone(),
+        label: set.label,
+        class_mask: set.class_mask,
+        expansion: set.expansion,
+        appearances: appearances.len(),
+    }
+}
+
+#[tauri::command]
+async fn search_sets(state: State<'_, AppState>, query: String) -> CommandResult<Vec<SetSummary>> {
+    let data = state.gamedata().await?;
+    Ok(data.search_sets(&query, 60).into_iter().map(summary).collect())
+}
+
+#[tauri::command]
+async fn set_details(state: State<'_, AppState>, id: u32) -> CommandResult<Option<SetDetails>> {
+    let data = state.gamedata().await?;
+    let Some(set) = data.set(id) else { return Ok(None) };
+    let mut pieces: Vec<SetPiece> = Vec::new();
+    for source in &set.pieces {
+        match pieces.iter_mut().find(|p| p.appearance_id == source.appearance_id) {
+            Some(piece) => piece.set_sources.push(*source),
+            None => pieces.push(SetPiece {
+                appearance_id: source.appearance_id,
+                set_sources: vec![*source],
+                all_sources: data
+                    .sources(source.appearance_id)
+                    .iter()
+                    .map(|&(item_id, modifier)| Source { item_id, modifier, appearance_id: source.appearance_id })
+                    .collect(),
+            }),
+        }
+    }
+    Ok(Some(SetDetails { summary: summary(set), pieces }))
+}
+
 /// Lance un scan ; l'avancement arrive par `on_event`, le résultat à la fin.
 #[tauri::command]
 async fn scan_items(
@@ -143,7 +244,9 @@ async fn scan_items(
     on_event: Channel<ScanEvent>,
 ) -> CommandResult<ScanResult> {
     let client = state.client().await?;
-    let result = scan::scan(&client, &state.cache, &ids, scan::DEFAULT_CONCURRENCY, |event| {
+    // Sans les tables du jeu (wago.tools injoignable), on scanne quand même, versions mêlées.
+    let data = state.gamedata().await.ok();
+    let result = scan::scan(&client, &state.cache, &ids, data.as_deref(), scan::DEFAULT_CONCURRENCY, |event| {
         // Fenêtre fermée pendant le scan : on continue sans afficher la progression.
         let _ = on_event.send(event);
     })
@@ -161,7 +264,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let cache_dir: PathBuf = app.path().app_cache_dir()?;
-            app.manage(AppState { cache: Cache::new(cache_dir), client: Mutex::new(None) });
+            app.manage(AppState { cache: Cache::new(cache_dir), client: Mutex::new(None), gamedata: Mutex::new(None) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -169,6 +272,10 @@ pub fn run() {
             save_credentials,
             clear_credentials,
             parse_items,
+            resolve_variants,
+            variant_labels,
+            search_sets,
+            set_details,
             connected_realms,
             item_infos,
             scan_items,

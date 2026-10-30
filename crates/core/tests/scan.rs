@@ -6,6 +6,7 @@ use serde_json::json;
 use wiremock::matchers::{header, header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 use wowscan_core::cache::Cache;
+use wowscan_core::gamedata::GameData;
 use wowscan_core::scan::{ScanEvent, scan};
 use wowscan_core::{BlizzardClient, Credentials, Error, Money, Region};
 
@@ -82,7 +83,7 @@ async fn scans_realms_and_commodities_then_uses_cache() {
     let client = client(&server, "secret");
 
     let events = Mutex::new(Vec::new());
-    let result = scan(&client, &cache, &[100, 200, 300, 100], 4, |e| events.lock().unwrap().push(e))
+    let result = scan(&client, &cache, &[100, 200, 300, 100], None, 4, |e| events.lock().unwrap().push(e))
         .await
         .unwrap();
 
@@ -92,14 +93,16 @@ async fn scans_realms_and_commodities_then_uses_cache() {
 
     let sword = &result.items[0];
     assert_eq!(sword.item_id, 100);
+    assert_eq!(sword.variants.len(), 1, "without game tables, one version per item");
+    let sword = &sword.variants[0];
     assert_eq!(sword.commodity, None);
     assert_eq!(sword.realms.iter().map(|r| r.connected_realm_id).collect::<Vec<_>>(), vec![2, 1]);
     assert_eq!(sword.realms[1].stats.min, Money(4_000_000));
     assert_eq!(sword.realms[1].stats.auctions, 2);
 
-    let herb = result.items[1].commodity.unwrap();
+    let herb = result.items[1].variants[0].commodity.unwrap();
     assert_eq!((herb.min, herb.quantity), (Money(100), 60));
-    assert!(result.items[2].realms.is_empty() && result.items[2].commodity.is_none());
+    assert!(result.items[2].variants.is_empty());
 
     let events = events.into_inner().unwrap();
     assert!(matches!(events[0], ScanEvent::Started { total: 3 }));
@@ -107,8 +110,8 @@ async fn scans_realms_and_commodities_then_uses_cache() {
 
     // Rescanner aussitôt : tout vient du cache, sans requête d'enchères.
     let before = server.received_requests().await.unwrap().len();
-    let again = scan(&client, &cache, &[100], 4, |_| {}).await.unwrap();
-    assert_eq!(again.items[0].realms.len(), 2);
+    let again = scan(&client, &cache, &[100], None, 4, |_| {}).await.unwrap();
+    assert_eq!(again.items[0].variants[0].realms.len(), 2);
     assert_eq!(server.received_requests().await.unwrap().len(), before);
 }
 
@@ -122,4 +125,89 @@ async fn rejects_bad_credentials() {
         .await;
     let err = client(&server, "wrong").check_credentials().await.unwrap_err();
     assert!(matches!(err, Error::InvalidCredentials));
+}
+
+/// Tables du jeu minimales (extraits réels) pour la ceinture 124182, servies comme wago.tools.
+async fn mount_game_tables(server: &MockServer) {
+    let tables = [
+        ("ItemBonus", "ID,Value_0,Value_1,Value_2,Value_3,ParentItemBonusListID,Type,OrderIndex\n\
+            1,4,0,0,0,9079,3,0\n2,2015,0,0,0,9080,4,0\n3,1,0,0,0,9080,7,0\n\
+            4,13145,0,0,0,9081,4,0\n5,3,0,0,0,9081,7,0\n"),
+        ("ItemModifiedAppearance", "ID,ItemID,ItemAppearanceModifierID,ItemAppearanceID,OrderIndex,TransmogSourceTypeEnum,Flags\n\
+            10,124182,0,25447,0,0,0\n11,124182,1,25419,0,0,0\n12,124182,3,25526,0,0,0\n"),
+        ("TransmogSetItem", "ID,TransmogSetID,ItemModifiedAppearanceID,Flags\n1,500,12,0\n"),
+        ("ItemNameDescription", "ID,Description_lang,Color\n2015,Heroic,65280\n13145,Mythic,-16711936\n"),
+        ("TransmogSet", "Name_lang,ID,ClassMask,TrackingQuestID,Flags,TransmogSetGroupID,ItemNameDescriptionID,ParentTransmogSetID,CompleteWorldStateID,ExpansionID,PatchIntroduced,UiOrder,ConditionID\n\
+            \"Vestments of Unhinged Malice\",500,0,0,0,0,13145,0,0,5,0,0,0\n"),
+    ];
+    for (table, csv) in tables {
+        Mock::given(method("GET"))
+            .and(path(format!("/db2/{table}/csv")))
+            .respond_with(ResponseTemplate::new(200).set_body_string(csv))
+            .mount(server)
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn splits_items_by_version_with_game_tables() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"access_token": "tok", "expires_in": 86399})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data/wow/connected-realm/index"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"connected_realms": [
+            {"href": format!("{}/data/wow/connected-realm/1?namespace=dynamic-eu", server.uri())},
+        ]})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data/wow/connected-realm/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": 1, "realms": [{"id": 1, "name": "Elune", "slug": "elune"}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data/wow/connected-realm/1/auctions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"auctions": [
+            {"id": 1, "item": {"id": 124182, "bonus_lists": [9081]}, "buyout": 25_000_000, "quantity": 1},
+            {"id": 2, "item": {"id": 124182, "bonus_lists": [9079]}, "buyout": 149_990_000, "quantity": 1},
+            {"id": 3, "item": {"id": 124182, "bonus_lists": [9080]}, "buyout": 199_990_000, "quantity": 1},
+            {"id": 4, "item": {"id": 124182, "bonus_lists": [9081]}, "buyout": 50_000_000, "quantity": 1},
+        ]})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data/wow/auctions/commodities"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"auctions": []})))
+        .mount(&server)
+        .await;
+    mount_game_tables(&server).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let cache = Cache::new(dir.path());
+    let data = GameData::load_from(&cache, &format!("{}/db2", server.uri())).await.unwrap();
+    assert_eq!(data.set(500).unwrap().pieces[0].appearance_id, 25526);
+    assert_eq!(data.label(13145).unwrap().get("fr_FR"), "Mythic", "same table served for both locales");
+
+    let result = scan(&client(&server, "secret"), &cache, &[124182], Some(&data), 2, |_| {}).await.unwrap();
+    let variants: Vec<(Option<u32>, Money, Vec<u32>)> = result.items[0]
+        .variants
+        .iter()
+        .map(|v| (v.appearance_id, v.realms[0].stats.min, v.labels.clone()))
+        .collect();
+    assert_eq!(
+        variants,
+        vec![
+            (Some(25526), Money(25_000_000), vec![13145]),
+            (Some(25447), Money(149_990_000), vec![]),
+            (Some(25419), Money(199_990_000), vec![2015]),
+        ],
+        "Mythic, Normal and Heroic are kept apart"
+    );
+    assert_eq!(result.items[0].variants[0].realms[0].stats.auctions, 2);
 }
