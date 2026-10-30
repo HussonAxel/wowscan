@@ -7,6 +7,7 @@ export const en: Messages = {
     settings: 'Settings',
     collections: 'Collections',
     sets: 'Sets',
+    raids: 'Raids',
   },
   command: {
     placeholder: 'Search a command…',
@@ -88,6 +89,17 @@ export const en: Messages = {
     '', 'Warrior', 'Paladin', 'Hunter', 'Rogue', 'Priest', 'Death Knight', 'Shaman',
     'Mage', 'Warlock', 'Monk', 'Druid', 'Demon Hunter', 'Evoker',
   ],
+  raids: {
+    title: 'Raids',
+    subtitle: 'Your progress by raid and class. Hover a cell to see owned pieces, missing ones and where they come from.',
+    difficulty: 'Difficulty',
+    difficulties: { raidFinder: 'Raid Finder', normal: 'Normal', heroic: 'Heroic', mythic: 'Mythic' },
+    raid: 'Raid',
+    cell: '{{raid}}, {{className}}: {{collected}} of {{total}}',
+    empty: 'No raid set in this difficulty.',
+    detailsError: 'Pieces unavailable.',
+    limit: 'Only sets confidently tied to a raid appear here; the others stay in Collections.',
+  },
   collections: {
     title: 'Collections',
     subtitle:
@@ -121,6 +133,9 @@ export const en: Messages = {
     },
     myClasses: 'My classes',
     allExpansions: 'All expansions',
+    preview: 'Set preview',
+    pieceMissing: 'missing',
+    pieceOwned: 'unlocked',
     categories: {
       all: 'All sources',
       raid: 'Raids',

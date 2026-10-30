@@ -101,7 +101,17 @@ export interface SetSummary {
   classMask: number
   expansion: number
   category: SetCategory
+  /** Raid et difficulté, si le moteur a pu les déterminer. */
+  raid: SetRaid | null
   appearances: number
+}
+
+export type SetDifficulty = 'raidFinder' | 'normal' | 'heroic' | 'mythic'
+
+export interface SetRaid {
+  instanceId: number
+  name: LocalizedString
+  difficulty: SetDifficulty
 }
 
 /** Famille d'un ensemble, déduite par le moteur (libellé, pièces, journal des aventures). */

@@ -77,16 +77,20 @@ function wowheadUrl(itemId: number, language: string) {
   return `https://www.wowhead.com/${language.startsWith('fr') ? 'fr/' : ''}item=${itemId}`
 }
 
-export function CollectionsPage() {
-  const { t } = useTranslation()
+export function useCollectionStatus() {
   const { gameDir } = useSettings()
-  const status = useQuery({
+  return useQuery({
     queryKey: ['collection', gameDir],
     queryFn: () => api.collectionStatus(gameDir || null),
     // L'export change à chaque /reload en jeu : on relit en revenant sur la fenêtre.
     staleTime: 0,
     refetchOnWindowFocus: true,
   })
+}
+
+export function CollectionsPage() {
+  const { t } = useTranslation()
+  const status = useCollectionStatus()
   const ready = Boolean(status.data?.gameDir && status.data.scannedAt)
 
   return (
@@ -115,7 +119,7 @@ export function CollectionsPage() {
   )
 }
 
-function AddonCard({
+export function AddonCard({
   status,
   refreshing,
   onRefresh,
@@ -573,6 +577,8 @@ function CollectionPanel({ set, offers, scan }: { set: SetCollection; offers: Ma
         <Progress value={set.collected} max={Math.max(set.total, 1)} label={t('collections.progress', { collected: set.collected, total: set.total })} showValue />
       </ArcScope>
 
+      <SetPreview pieces={data.pieces} missing={missingSet} infos={infos.data} />
+
       {missingPieces.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => void onScan()}>
@@ -632,6 +638,47 @@ function CollectionPanel({ set, offers, scan }: { set: SetCollection; offers: Ma
         </div>
       )}
     </section>
+  )
+}
+
+/** Ordre de la fenêtre de personnage ; les emplacements inconnus passent à la fin. */
+const SLOT_ORDER = [1, 3, 16, 5, 20, 4, 19, 9, 10, 6, 7, 8, 13, 17, 21, 15, 26, 22, 14, 23]
+
+export function slotRank(slot: number | null | undefined) {
+  const rank = SLOT_ORDER.indexOf(slot ?? 0)
+  return rank === -1 ? SLOT_ORDER.length : rank
+}
+
+/** Aperçu du set : l'icône de chaque pièce, en grisé tant qu'elle n'est pas débloquée. */
+function SetPreview({
+  pieces,
+  missing,
+  infos,
+}: {
+  pieces: SetPiece[]
+  missing: Set<number>
+  infos: Record<number, ItemInfo> | undefined
+}) {
+  const { t } = useTranslation()
+  const locale = useApiLocale()
+  const sorted = [...pieces].sort((a, b) => slotRank(a.slot) - slotRank(b.slot))
+
+  return (
+    <ul className="flex flex-wrap gap-2" aria-label={t('collections.preview')}>
+      {sorted.map((piece) => {
+        const itemId = piece.setSources[0].itemId
+        const info = infos?.[itemId]
+        const isMissing = missing.has(piece.appearanceId)
+        const name = info ? localized(info.name, locale) : t(`slots.${piece.slot ?? 0}`, { defaultValue: `#${itemId}` })
+        const state = t(isMissing ? 'collections.pieceMissing' : 'collections.pieceOwned')
+        return (
+          <li key={piece.appearanceId} className="relative" title={`${name} (${state})`}>
+            <ItemIcon item={info} className={cn('size-12', isMissing && 'opacity-40 grayscale')} />
+            {!isMissing && <CircleCheck className="absolute -right-1 -bottom-1 size-4 rounded-full bg-card text-primary" />}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

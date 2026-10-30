@@ -5,6 +5,7 @@ export const fr = {
     settings: 'Paramètres',
     collections: 'Collections',
     sets: 'Ensembles',
+    raids: 'Raids',
   },
   command: {
     placeholder: 'Rechercher une commande…',
@@ -86,6 +87,17 @@ export const fr = {
     '', 'Guerrier', 'Paladin', 'Chasseur', 'Voleur', 'Prêtre', 'Chevalier de la mort', 'Chaman',
     'Mage', 'Démoniste', 'Moine', 'Druide', 'Chasseur de démons', 'Évocateur',
   ],
+  raids: {
+    title: 'Raids',
+    subtitle: 'Ta progression par raid et par classe. Survole une case pour voir les pièces obtenues, celles qui manquent et leur origine.',
+    difficulty: 'Difficulté',
+    difficulties: { raidFinder: 'Outil Raids', normal: 'Normal', heroic: 'Héroïque', mythic: 'Mythique' },
+    raid: 'Raid',
+    cell: '{{raid}}, {{className}} : {{collected}} sur {{total}}',
+    empty: 'Aucun ensemble de raid dans cette difficulté.',
+    detailsError: 'Pièces indisponibles.',
+    limit: 'Seuls les ensembles rattachés à un raid avec certitude apparaissent ici ; les autres restent dans Collections.',
+  },
   collections: {
     title: 'Collections',
     subtitle:
@@ -119,6 +131,9 @@ export const fr = {
     },
     myClasses: 'Mes classes',
     allExpansions: 'Toutes les extensions',
+    preview: 'Aperçu de l’ensemble',
+    pieceMissing: 'manquante',
+    pieceOwned: 'débloquée',
     categories: {
       all: 'Toutes les sources',
       raid: 'Raids',

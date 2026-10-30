@@ -200,6 +200,9 @@ async fn splits_items_by_version_with_game_tables() {
     let data = GameData::load_from(&cache, &format!("{}/db2", server.uri())).await.unwrap();
     assert_eq!(data.set(500).unwrap().pieces[0].appearance_id, 25526);
     assert_eq!(data.set(500).unwrap().category, wowscan_core::gamedata::SetCategory::Raid);
+    let raid = data.set(500).unwrap().raid.as_ref().unwrap();
+    assert_eq!((raid.instance_id, raid.difficulty), (669, wowscan_core::gamedata::SetDifficulty::Mythic));
+    assert_eq!(raid.name.get("en_GB"), "Hellfire Citadel");
     assert_eq!(data.label(13145).unwrap().get("fr_FR"), "Mythic", "same table served for both locales");
     assert_eq!(data.drops(124182)[0].instance.get("en_GB"), "Hellfire Citadel");
     assert_eq!(data.slot(124182), Some(6));

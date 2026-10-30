@@ -13,6 +13,8 @@ import type {
   SetCollection,
   SetCategory,
   SetDetails,
+  SetDifficulty,
+  SetRaid,
   Variant,
 } from './types'
 
@@ -28,7 +30,20 @@ const demoCategory = (label: number | null): SetCategory => {
   if (/^(Dungeon|Timewarped)/.test(text)) return 'dungeon'
   return 'other'
 }
-const sets = (demo.sets as Omit<SetDetails, 'category'>[]).map((s) => ({ ...s, category: demoCategory(s.label) }))
+const demoDifficulty = (label: number | null): SetDifficulty => {
+  const text = label === null ? '' : (labels[label]?.en_GB ?? '')
+  return text.startsWith('Raid Finder') ? 'raidFinder' : text.includes('Heroic') ? 'heroic' : text.startsWith('Mythic') ? 'mythic' : 'normal'
+}
+const demoRaid = (set: Omit<SetDetails, 'category' | 'raid'>): SetRaid | null => {
+  const drop = set.pieces.flatMap((p) => p.allSources.flatMap((s) => s.drops))[0]
+  if (demoCategory(set.label) !== 'raid' || !drop) return null
+  return { instanceId: drop.instanceId, name: drop.instance, difficulty: demoDifficulty(set.label) }
+}
+const sets = (demo.sets as Omit<SetDetails, 'category' | 'raid'>[]).map((s) => ({
+  ...s,
+  category: demoCategory(s.label),
+  raid: demoRaid(s),
+}))
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const fold = (text: string) =>

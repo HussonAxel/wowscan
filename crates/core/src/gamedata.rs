@@ -26,7 +26,7 @@ const WAGO_BASE: &str = "https://wago.tools/db2";
 const CACHE_FILE: &str = "gamedata.json.gz";
 const TTL_SECS: u64 = 7 * 24 * 3600;
 /// Incrémenté quand le format du cache change, pour le reconstruire.
-const FORMAT: u32 = 3;
+const FORMAT: u32 = 4;
 
 /// Types de bonus utiles (colonne `Type` de `ItemBonus`).
 const BONUS_NAME_DESCRIPTION: u32 = 4;
@@ -64,7 +64,60 @@ pub struct TransmogSet {
     pub expansion: u32,
     #[serde(default)]
     pub category: SetCategory,
+    /// Raid et difficulté, si on sait les déterminer.
+    #[serde(default)]
+    pub raid: Option<SetRaid>,
     pub pieces: Vec<Source>,
+}
+
+/// Raid d'où vient un ensemble.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetRaid {
+    pub instance_id: u32,
+    pub name: LocalizedString,
+    pub difficulty: SetDifficulty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SetDifficulty {
+    RaidFinder,
+    Normal,
+    Heroic,
+    Mythic,
+}
+
+/// Difficulté d'après le libellé (anglais) ; sans libellé, un ensemble de raid est en Normal.
+fn raid_difficulty(label: &str) -> Option<SetDifficulty> {
+    if label.starts_with("Mythic+") || label.contains("World Tier") {
+        None
+    } else if label.is_empty() || label.contains("Normal") {
+        Some(SetDifficulty::Normal)
+    } else if label.starts_with("Raid Finder") {
+        Some(SetDifficulty::RaidFinder)
+    } else if label.contains("Heroic") {
+        Some(SetDifficulty::Heroic)
+    } else if label.starts_with("Mythic") {
+        Some(SetDifficulty::Mythic)
+    } else {
+        None
+    }
+}
+
+/// Instance la plus citée (à égalité, la plus récente).
+fn most_voted(votes: &[u32]) -> Option<(u32, usize)> {
+    let mut counts: HashMap<u32, usize> = HashMap::new();
+    for &vote in votes {
+        *counts.entry(vote).or_default() += 1;
+    }
+    counts.into_iter().max_by_key(|&(instance, count)| (count, instance))
+}
+
+/// Raid hérité des autres ensembles du groupe : seulement avec au moins deux voix et une nette majorité,
+/// car certains groupes mêlent plusieurs raids.
+fn group_instance(votes: &[u32]) -> Option<u32> {
+    most_voted(votes).filter(|&(_, count)| count >= 2 && count * 2 > votes.len()).map(|(instance, _)| instance)
 }
 
 /// Grande famille d'un ensemble, déduite de son libellé, de ses pièces et du journal des aventures.
@@ -84,6 +137,10 @@ const INSTANCE_DUNGEON: u8 = 1;
 const INSTANCE_RAID: u8 = 2;
 /// `TransmogSourceTypeEnum` : comptoir.
 const SOURCE_TRADING_POST: u8 = 10;
+/// `Flags` de `JournalInstance` : boss de zone (et Baradin, dont le butin vient des autres raids).
+const INSTANCE_FLAG_WORLD: u32 = 2;
+/// « Draenor » : boss de zone rangés sur la carte de Hautchamp, sans le drapeau.
+const INSTANCE_DRAENOR: u32 = 557;
 
 /// Le libellé (anglais) suffit souvent : « Mythic », « Gladiator », « Dungeons »… Sinon on regarde
 /// d'où viennent les pièces : comptoir, ou boss de raid ou de donjon pour au moins la moitié d'entre elles.
@@ -449,10 +506,14 @@ async fn download(base: &str) -> Result<Stored> {
         label: u32,
         #[serde(rename = "ExpansionID")]
         expansion: u32,
+        #[serde(rename = "TransmogSetGroupID")]
+        group: u32,
     }
     let mut sets: HashMap<u32, TransmogSet> = HashMap::new();
+    let mut set_groups: HashMap<u32, u32> = HashMap::new();
     for ((_, locale), file) in LOCALES.iter().zip([&sets_en, &sets_fr]) {
         for row in rows::<SetRow>(file)? {
+            set_groups.insert(row.id, row.group);
             let set = sets.entry(row.id).or_insert_with(|| TransmogSet {
                 id: row.id,
                 name: LocalizedString::default(),
@@ -461,6 +522,7 @@ async fn download(base: &str) -> Result<Stored> {
                 class_mask: row.class_mask as u32,
                 expansion: row.expansion,
                 category: SetCategory::Other,
+                raid: None,
                 pieces: pieces.remove(&row.id).unwrap_or_default(),
             });
             if !row.name.is_empty() {
@@ -517,13 +579,20 @@ async fn download(base: &str) -> Result<Stored> {
         name: String,
         #[serde(rename = "MapID")]
         map: u32,
+        #[serde(rename = "Flags", default)]
+        flags: u32,
     }
     let wanted: HashSet<u32> = encounters.values().map(|e| e.instance).collect();
     let mut instances: HashMap<u32, LocalizedString> = HashMap::new();
     let mut instance_maps: HashMap<u32, u32> = HashMap::new();
+    // Boss de zone (Pandarie, Îles Dragons…) : typés comme des raids, ils ne doivent pas attirer les ensembles.
+    let mut world_instances: HashSet<u32> = HashSet::from([INSTANCE_DRAENOR]);
     for ((_, locale), file) in LOCALES.iter().zip([&instances_en, &instances_fr]) {
         for row in rows::<InstanceRow>(file)?.into_iter().filter(|r| wanted.contains(&r.id) && !r.name.is_empty()) {
             instance_maps.insert(row.id, row.map);
+            if row.flags & INSTANCE_FLAG_WORLD != 0 {
+                world_instances.insert(row.id);
+            }
             instances.entry(row.id).or_default().0.insert((*locale).to_owned(), row.name);
         }
     }
@@ -540,6 +609,12 @@ async fn download(base: &str) -> Result<Stored> {
         let instance = encounters.get(encounter)?.instance;
         map_kinds.get(instance_maps.get(&instance)?).copied()
     };
+    let raid_instance = |encounter: &u32| {
+        let instance = encounters.get(encounter)?.instance;
+        (instance_kind(encounter) == Some(INSTANCE_RAID) && !world_instances.contains(&instance)).then_some(instance)
+    };
+    let mut set_instances: HashMap<u32, u32> = HashMap::new();
+    let mut group_votes: HashMap<u32, Vec<u32>> = HashMap::new();
     for set in &mut sets {
         let pieces: Vec<(u8, Vec<u8>)> = set
             .pieces
@@ -555,6 +630,31 @@ async fn download(base: &str) -> Result<Stored> {
             .collect();
         let label = set.label.and_then(|id| labels.get(&id)).map_or("", |l| l.get("en_GB"));
         set.category = categorize(set.name.get("en_GB"), label, &pieces);
+        if set.category != SetCategory::Raid {
+            continue;
+        }
+        let mut votes = Vec::new();
+        for piece in &set.pieces {
+            let mut piece_instances: Vec<u32> =
+                drops.get(&piece.item_id).map_or_else(Vec::new, |ids| ids.iter().filter_map(raid_instance).collect());
+            piece_instances.sort_unstable();
+            piece_instances.dedup();
+            votes.extend(piece_instances);
+        }
+        if let Some((instance, _)) = most_voted(&votes) {
+            set_instances.insert(set.id, instance);
+            let group = set_groups.get(&set.id).copied().unwrap_or(0);
+            if group != 0 {
+                group_votes.entry(group).or_default().push(instance);
+            }
+        }
+    }
+    for set in sets.iter_mut().filter(|s| s.category == SetCategory::Raid) {
+        let inherited = || group_instance(group_votes.get(set_groups.get(&set.id)?)?);
+        let Some(instance) = set_instances.get(&set.id).copied().or_else(inherited) else { continue };
+        let label = set.label.and_then(|id| labels.get(&id)).map_or("", |l| l.get("en_GB"));
+        let (Some(difficulty), Some(name)) = (raid_difficulty(label), instances.get(&instance)) else { continue };
+        set.raid = Some(SetRaid { instance_id: instance, name: name.clone(), difficulty });
     }
 
     #[derive(Deserialize)]
@@ -632,6 +732,7 @@ pub(crate) mod tests {
                 class_mask: 0,
                 expansion: 6,
                 category: SetCategory::Pvp,
+                raid: None,
                 pieces: vec![
                     Source { item_id: 124182, modifier: 3, appearance_id: 25526 },
                     Source { item_id: 999_002, modifier: 3, appearance_id: 30000 },
@@ -658,6 +759,36 @@ pub(crate) mod tests {
         assert_eq!(categorize("Diabolic Raiment", "", &[boss(&[2]), boss(&[2, 1]), (4, vec![])]), Raid);
         assert_eq!(categorize("Nighthide Coat", "Green", &[boss(&[1]), (4, vec![])]), Dungeon);
         assert_eq!(categorize("Faewoven Regalia", "Campaign", &[(2, vec![]), boss(&[2]), (2, vec![])]), Other);
+    }
+
+    #[test]
+    fn raid_difficulties_from_labels() {
+        use SetDifficulty::*;
+        for (label, expected) in [
+            ("", Some(Normal)),
+            ("Normal", Some(Normal)),
+            ("10 Player (Normal)", Some(Normal)),
+            ("25 Player (Normal)", Some(Normal)),
+            ("Raid Finder", Some(RaidFinder)),
+            ("Heroic", Some(Heroic)),
+            ("25 Player (Heroic)", Some(Heroic)),
+            ("Mythic", Some(Mythic)),
+            ("Mythic+", None),
+            ("Heroic World Tier", None),
+            ("Gold", None),
+        ] {
+            assert_eq!(raid_difficulty(label), expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn raid_instance_votes() {
+        assert_eq!(most_voted(&[1, 2, 2]), Some((2, 2)));
+        assert_eq!(most_voted(&[1, 2]), Some((2, 1)), "tie goes to the latest");
+        assert_eq!(most_voted(&[]), None);
+        assert_eq!(group_instance(&[7, 7, 8]), Some(7));
+        assert_eq!(group_instance(&[7]), None, "a single vote is not enough");
+        assert_eq!(group_instance(&[7, 7, 8, 8]), None, "no clear majority");
     }
 
     #[test]
