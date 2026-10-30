@@ -73,7 +73,7 @@ function setCost(set: SetCollection, offers: Map<number, Offer>) {
   return { buyable: priced.length, cost: priced.reduce((sum, o) => sum + o.price, 0) }
 }
 
-function wowheadUrl(itemId: number, language: string) {
+export function wowheadUrl(itemId: number, language: string) {
   return `https://www.wowhead.com/${language.startsWith('fr') ? 'fr/' : ''}item=${itemId}`
 }
 

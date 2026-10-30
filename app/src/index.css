@@ -131,7 +131,7 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
+    --radius: 0.5rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -222,7 +222,7 @@
     max-width: 620px;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 11px;
     background: var(--popover);
     box-shadow: var(--shadow-2xl);
     --command-level-scale: 0.99;
@@ -328,7 +328,7 @@
   .command-active-indicator {
     position: absolute;
     z-index: 0;
-    border-radius: 8px;
+    border-radius: 6px;
     background: var(--accent);
     pointer-events: none;
 }
@@ -350,7 +350,7 @@
     cursor: pointer;
     align-items: center;
     justify-content: space-between;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 0.625rem;
 }
   .command-option[aria-disabled='true'] {

@@ -5862,7 +5862,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wowscan-app"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "keyring",
  "serde",
@@ -5878,7 +5878,7 @@ dependencies = [
 
 [[package]]
 name = "wowscan-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -5890,7 +5890,7 @@ dependencies = [
 
 [[package]]
 name = "wowscan-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "csv",
  "flate2",

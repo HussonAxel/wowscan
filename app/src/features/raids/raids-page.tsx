@@ -8,10 +8,11 @@ import { EmptyState } from '@/components/arc/empty-state/empty-state'
 import { ItemIcon } from '@/components/item-icon'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AddonCard, slotRank, useCollectionStatus } from '@/features/collections/collections-page'
+import { AddonCard, slotRank, useCollectionStatus, wowheadUrl } from '@/features/collections/collections-page'
 import { api } from '@/lib/api'
 import { useErrorMessage } from '@/lib/errors'
 import { localized, useApiLocale } from '@/lib/format'
+import { openUrl } from '@/lib/open-url'
 import { useSettings } from '@/lib/settings'
 import type { ItemInfo, SetCollection, SetDifficulty, SetPiece } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -232,7 +233,7 @@ function ClassCell({ raid, classId, className }: { raid: RaidRow; classId: numbe
           )}
         </button>
       </HoverCardTrigger>
-      <HoverCardContent className="max-h-[70vh] overflow-y-auto">
+      <HoverCardContent className="max-h-[70vh] w-auto max-w-sm min-w-64 overflow-y-auto">
         <CellDetails raid={raid} sets={sets} className={className} />
       </HoverCardContent>
     </HoverCard>
@@ -273,11 +274,11 @@ function CellDetails({ raid, sets, className }: { raid: RaidRow; sets: SetCollec
               </span>
             </div>
             {pieces ? (
-              <ul className="space-y-1">
+              <ul className="flex flex-wrap gap-1.5">
                 {[...pieces]
                   .sort((a, b) => slotRank(a.slot) - slotRank(b.slot))
                   .map((piece) => (
-                    <PieceRow
+                    <PieceIcon
                       key={piece.appearanceId}
                       piece={piece}
                       owned={!missing.has(piece.appearanceId)}
@@ -289,7 +290,7 @@ function CellDetails({ raid, sets, className }: { raid: RaidRow; sets: SetCollec
             ) : details[index]?.isError ? (
               <p className="text-xs text-muted-foreground">{t('raids.detailsError')}</p>
             ) : (
-              <Skeleton className="h-16 rounded-md" />
+              <Skeleton className="h-9 rounded-md" />
             )}
           </div>
         )
@@ -298,9 +299,11 @@ function CellDetails({ raid, sets, className }: { raid: RaidRow; sets: SetCollec
   )
 }
 
-function PieceRow({ piece, owned, raidId, item }: { piece: SetPiece; owned: boolean; raidId: number; item?: ItemInfo }) {
-  const { t } = useTranslation()
+/** Icône de la pièce : pleine si elle est obtenue, grisée sinon ; le clic ouvre sa fiche Wowhead. */
+function PieceIcon({ piece, owned, raidId, item }: { piece: SetPiece; owned: boolean; raidId: number; item?: ItemInfo }) {
+  const { t, i18n } = useTranslation()
   const locale = useApiLocale()
+  const itemId = piece.setSources[0]?.itemId
   const drops = [...new Map(piece.allSources.flatMap((s) => s.drops).map((d) => [d.encounterId, d])).values()]
   // Le boss du raid affiché d'abord : la même apparence tombe parfois ailleurs.
   const here = drops.filter((d) => d.instanceId === raidId)
@@ -311,16 +314,22 @@ function PieceRow({ piece, owned, raidId, item }: { piece: SetPiece; owned: bool
       .map((d) => `${localized(d.encounter, locale)} — ${localized(d.instance, locale)}`)
       .join(' · ') || kinds.map((k) => t(`collections.kinds.${k}`, { defaultValue: '' })).filter(Boolean).join(' · ')
   const slot = piece.slot ? t(`slots.${piece.slot}`, { defaultValue: '' }) : ''
+  const name = item ? localized(item.name, locale) : slot || `#${itemId ?? piece.appearanceId}`
+  const state = t(owned ? 'collections.pieceOwned' : 'collections.pieceMissing')
+  const title = [`${name} (${state})`, source].filter(Boolean).join('\n')
 
   return (
-    <li className="flex items-center gap-2">
-      <ItemIcon item={item} className={cn('size-7 shrink-0', !owned && 'opacity-60')} />
-      <div className="min-w-0 flex-1">
-        <div className={cn('truncate text-xs font-medium', !owned && 'text-muted-foreground')}>
-          {item ? localized(item.name, locale) : slot || `#${piece.setSources[0]?.itemId ?? piece.appearanceId}`}
-        </div>
-        {source && <div className="truncate text-[11px] text-muted-foreground">{source}</div>}
-      </div>
+    <li>
+      <button
+        type="button"
+        title={title}
+        aria-label={title}
+        disabled={itemId === undefined}
+        onClick={() => itemId !== undefined && openUrl(wowheadUrl(itemId, i18n.language))}
+        className="block rounded-md transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-primary"
+      >
+        <ItemIcon item={item} className={cn('size-9', !owned && 'opacity-35 grayscale')} />
+      </button>
     </li>
   )
 }
