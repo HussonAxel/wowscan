@@ -100,8 +100,12 @@ export interface SetSummary {
   /** Bit n = classe n+1 ; 0 = toutes les classes. */
   classMask: number
   expansion: number
+  category: SetCategory
   appearances: number
 }
+
+/** Famille d'un ensemble, déduite par le moteur (libellé, pièces, journal des aventures). */
+export type SetCategory = 'raid' | 'dungeon' | 'pvp' | 'tradingPost' | 'other'
 
 /**
  * Origine d'un objet (`TransmogSourceTypeEnum` du jeu) : 1 boss, 2 quête, 3 marchand,

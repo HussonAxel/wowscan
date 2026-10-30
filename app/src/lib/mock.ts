@@ -11,6 +11,7 @@ import type {
   LocalizedString,
   ScanEvent,
   SetCollection,
+  SetCategory,
   SetDetails,
   Variant,
 } from './types'
@@ -18,8 +19,16 @@ import type {
 const realms = demo.realms as ConnectedRealm[]
 const infos = demo.infos as unknown as Record<string, ItemInfo>
 const results = demo.items as ItemResult[]
-const sets = demo.sets as SetDetails[]
 const labels = demo.labels as unknown as Record<number, LocalizedString>
+/** Les données de démo n'ont pas de catégorie : on la déduit du libellé, comme le moteur. */
+const demoCategory = (label: number | null): SetCategory => {
+  const text = label === null ? '' : (labels[label]?.en_GB ?? '')
+  if (/^(Gladiator|Elite|Combatant|Aspirant|Honor|PvP)/i.test(text)) return 'pvp'
+  if (/^(Raid Finder|Normal|Heroic|Mythic|\d+ Player)/.test(text)) return 'raid'
+  if (/^(Dungeon|Timewarped)/.test(text)) return 'dungeon'
+  return 'other'
+}
+const sets = (demo.sets as Omit<SetDetails, 'category'>[]).map((s) => ({ ...s, category: demoCategory(s.label) }))
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const fold = (text: string) =>

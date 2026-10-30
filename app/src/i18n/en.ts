@@ -121,6 +121,14 @@ export const en: Messages = {
     },
     myClasses: 'My classes',
     allExpansions: 'All expansions',
+    categories: {
+      all: 'All sources',
+      raid: 'Raids',
+      dungeon: 'Dungeons',
+      pvp: 'PvP',
+      tradingPost: 'Trading Post',
+      other: 'Other',
+    },
     stats: {
       sets: 'Sets',
       missing: 'Missing appearances',

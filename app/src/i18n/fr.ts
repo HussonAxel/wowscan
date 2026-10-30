@@ -119,6 +119,14 @@ export const fr = {
     },
     myClasses: 'Mes classes',
     allExpansions: 'Toutes les extensions',
+    categories: {
+      all: 'Toutes les sources',
+      raid: 'Raids',
+      dungeon: 'Donjons',
+      pvp: 'JcJ',
+      tradingPost: 'Comptoir',
+      other: 'Autres',
+    },
     stats: {
       sets: 'Ensembles',
       missing: 'Apparences manquantes',

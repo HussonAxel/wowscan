@@ -224,6 +224,7 @@ function CollectionSets({ status }: { status: CollectionStatus }) {
   const [query, setQuery] = useState('')
   const [classFilter, setClassFilter] = useState(status.characters.length ? 'mine' : 'all')
   const [expansion, setExpansion] = useState('all')
+  const [category, setCategory] = useState('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('inProgress')
   const [shown, setShown] = useState(PAGE)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -254,6 +255,7 @@ function CollectionSets({ status }: { status: CollectionStatus }) {
           statusMatch(s) &&
           classMatch(s.classMask) &&
           (expansion === 'all' || s.expansion === Number(expansion)) &&
+          (category === 'all' || s.category === category) &&
           (!search || Object.values(s.name).some((n) => n.toLocaleLowerCase().includes(search))),
       )
       .sort(
@@ -262,7 +264,7 @@ function CollectionSets({ status }: { status: CollectionStatus }) {
           b.collected / b.total - a.collected / a.total ||
           localized(a.name, locale).localeCompare(localized(b.name, locale)),
       )
-  }, [sets.data, status.characters, classFilter, statusFilter, expansion, search, locale])
+  }, [sets.data, status.characters, classFilter, statusFilter, expansion, category, search, locale])
 
   const missing = useMemo(() => [...new Set(filtered.flatMap((s) => s.missing))], [filtered])
   const totals = useMemo(() => {
@@ -334,6 +336,18 @@ function CollectionSets({ status }: { status: CollectionStatus }) {
             {expansions.map((name, id) => (
               <SelectItem key={id} value={String(id)}>
                 {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={category} onValueChange={setCategory}>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(['all', 'raid', 'dungeon', 'pvp', 'tradingPost', 'other'] as const).map((c) => (
+              <SelectItem key={c} value={c}>
+                {t(`collections.categories.${c}`)}
               </SelectItem>
             ))}
           </SelectContent>

@@ -145,6 +145,7 @@ async fn mount_game_tables(server: &MockServer) {
             Archimonde,,0,0,1438,669,1799,13\n"),
         ("JournalInstance", "ID,Name_lang,Description_lang,MapID\n669,Hellfire Citadel,,1448\n"),
         ("Item", "ID,ClassID,SubclassID,Material,InventoryType,SheatheType\n124182,4,3,5,6,0\n"),
+        ("Map", "ID,Directory,InstanceType,ExpansionID\n1448,HellfireRaid,2,5\n"),
     ];
     for (table, csv) in tables {
         Mock::given(method("GET"))
@@ -198,6 +199,7 @@ async fn splits_items_by_version_with_game_tables() {
     let cache = Cache::new(dir.path());
     let data = GameData::load_from(&cache, &format!("{}/db2", server.uri())).await.unwrap();
     assert_eq!(data.set(500).unwrap().pieces[0].appearance_id, 25526);
+    assert_eq!(data.set(500).unwrap().category, wowscan_core::gamedata::SetCategory::Raid);
     assert_eq!(data.label(13145).unwrap().get("fr_FR"), "Mythic", "same table served for both locales");
     assert_eq!(data.drops(124182)[0].instance.get("en_GB"), "Hellfire Citadel");
     assert_eq!(data.slot(124182), Some(6));

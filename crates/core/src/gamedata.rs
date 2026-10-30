@@ -26,7 +26,7 @@ const WAGO_BASE: &str = "https://wago.tools/db2";
 const CACHE_FILE: &str = "gamedata.json.gz";
 const TTL_SECS: u64 = 7 * 24 * 3600;
 /// Incrémenté quand le format du cache change, pour le reconstruire.
-const FORMAT: u32 = 2;
+const FORMAT: u32 = 3;
 
 /// Types de bonus utiles (colonne `Type` de `ItemBonus`).
 const BONUS_NAME_DESCRIPTION: u32 = 4;
@@ -62,7 +62,56 @@ pub struct TransmogSet {
     /// Classes autorisées (bit = identifiant de classe - 1) ; 0 = toutes.
     pub class_mask: u32,
     pub expansion: u32,
+    #[serde(default)]
+    pub category: SetCategory,
     pub pieces: Vec<Source>,
+}
+
+/// Grande famille d'un ensemble, déduite de son libellé, de ses pièces et du journal des aventures.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SetCategory {
+    Raid,
+    Dungeon,
+    Pvp,
+    TradingPost,
+    #[default]
+    Other,
+}
+
+/// Type d'instance (`InstanceType` de la table `Map`).
+const INSTANCE_DUNGEON: u8 = 1;
+const INSTANCE_RAID: u8 = 2;
+/// `TransmogSourceTypeEnum` : comptoir.
+const SOURCE_TRADING_POST: u8 = 10;
+
+/// Le libellé (anglais) suffit souvent : « Mythic », « Gladiator », « Dungeons »… Sinon on regarde
+/// d'où viennent les pièces : comptoir, ou boss de raid ou de donjon pour au moins la moitié d'entre elles.
+/// `pieces` : pour chaque pièce, (origine, types d'instance où un boss la laisse tomber).
+fn categorize(name: &str, label: &str, pieces: &[(u8, Vec<u8>)]) -> SetCategory {
+    const PVP_LABELS: [&str; 7] = ["Gladiator", "Elite", "Combatant", "Aspirant", "Honor", "War Mode", "PVP"];
+    const PVP_NAMES: [&str; 3] = ["Gladiator's", "Combatant's", "Aspirant's"];
+    const RAID_LABELS: [&str; 4] = ["Raid Finder", "Normal", "Heroic", "Mythic"];
+    let player_count = label.split_once(" Player").is_some_and(|(n, _)| n.parse::<u8>().is_ok());
+    if PVP_LABELS.iter().any(|l| label.starts_with(l)) || PVP_NAMES.iter().any(|n| name.contains(n)) {
+        return SetCategory::Pvp;
+    }
+    if RAID_LABELS.iter().any(|l| label.starts_with(l)) || player_count {
+        return SetCategory::Raid;
+    }
+    if label.starts_with("Dungeon") || label.starts_with("Timewarped") {
+        return SetCategory::Dungeon;
+    }
+    let half = |count: usize| !pieces.is_empty() && count * 2 >= pieces.len();
+    if half(pieces.iter().filter(|(kind, _)| *kind == SOURCE_TRADING_POST).count()) {
+        SetCategory::TradingPost
+    } else if half(pieces.iter().filter(|(_, types)| types.contains(&INSTANCE_RAID)).count()) {
+        SetCategory::Raid
+    } else if half(pieces.iter().filter(|(_, types)| types.contains(&INSTANCE_DUNGEON)).count()) {
+        SetCategory::Dungeon
+    } else {
+        SetCategory::Other
+    }
 }
 
 /// Version d'un objet déduite de ses bonus.
@@ -303,13 +352,14 @@ async fn download(base: &str) -> Result<Stored> {
         get("TransmogSet", Some(LOCALES[0].0)),
         get("TransmogSet", Some(LOCALES[1].0)),
     )?;
-    let (journal_items, encounters_en, encounters_fr, instances_en, instances_fr, items) = tokio::try_join!(
+    let (journal_items, encounters_en, encounters_fr, instances_en, instances_fr, items, maps) = tokio::try_join!(
         get("JournalEncounterItem", None),
         get("JournalEncounter", Some(LOCALES[0].0)),
         get("JournalEncounter", Some(LOCALES[1].0)),
         get("JournalInstance", Some(LOCALES[0].0)),
         get("JournalInstance", Some(LOCALES[1].0)),
         get("Item", None),
+        get("Map", None),
     )?;
 
     #[derive(Deserialize)]
@@ -410,6 +460,7 @@ async fn download(base: &str) -> Result<Stored> {
                 // Le masque est un entier signé dans les tables : on garde ses 32 bits.
                 class_mask: row.class_mask as u32,
                 expansion: row.expansion,
+                category: SetCategory::Other,
                 pieces: pieces.remove(&row.id).unwrap_or_default(),
             });
             if !row.name.is_empty() {
@@ -464,13 +515,46 @@ async fn download(base: &str) -> Result<Stored> {
         id: u32,
         #[serde(rename = "Name_lang")]
         name: String,
+        #[serde(rename = "MapID")]
+        map: u32,
     }
     let wanted: HashSet<u32> = encounters.values().map(|e| e.instance).collect();
     let mut instances: HashMap<u32, LocalizedString> = HashMap::new();
+    let mut instance_maps: HashMap<u32, u32> = HashMap::new();
     for ((_, locale), file) in LOCALES.iter().zip([&instances_en, &instances_fr]) {
         for row in rows::<InstanceRow>(file)?.into_iter().filter(|r| wanted.contains(&r.id) && !r.name.is_empty()) {
+            instance_maps.insert(row.id, row.map);
             instances.entry(row.id).or_default().0.insert((*locale).to_owned(), row.name);
         }
+    }
+
+    #[derive(Deserialize)]
+    struct MapRow {
+        #[serde(rename = "ID")]
+        id: u32,
+        #[serde(rename = "InstanceType")]
+        kind: u8,
+    }
+    let map_kinds: HashMap<u32, u8> = rows::<MapRow>(&maps)?.into_iter().map(|r| (r.id, r.kind)).collect();
+    let instance_kind = |encounter: &u32| {
+        let instance = encounters.get(encounter)?.instance;
+        map_kinds.get(instance_maps.get(&instance)?).copied()
+    };
+    for set in &mut sets {
+        let pieces: Vec<(u8, Vec<u8>)> = set
+            .pieces
+            .iter()
+            .map(|p| {
+                let kind = item_appearances
+                    .get(&p.item_id)
+                    .and_then(|list| list.iter().find(|(m, a, _)| *m == p.modifier && *a == p.appearance_id))
+                    .map_or(0, |&(_, _, kind)| kind);
+                let types = drops.get(&p.item_id).map_or_else(Vec::new, |ids| ids.iter().filter_map(instance_kind).collect());
+                (kind, types)
+            })
+            .collect();
+        let label = set.label.and_then(|id| labels.get(&id)).map_or("", |l| l.get("en_GB"));
+        set.category = categorize(set.name.get("en_GB"), label, &pieces);
     }
 
     #[derive(Deserialize)]
@@ -547,6 +631,7 @@ pub(crate) mod tests {
                 label: Some(13145),
                 class_mask: 0,
                 expansion: 6,
+                category: SetCategory::Pvp,
                 pieces: vec![
                     Source { item_id: 124182, modifier: 3, appearance_id: 25526 },
                     Source { item_id: 999_002, modifier: 3, appearance_id: 30000 },
@@ -557,6 +642,22 @@ pub(crate) mod tests {
             instances: labels(&[(669, "Hellfire Citadel", "Citadelle des Flammes infernales")]),
             slots: HashMap::from([(124182, 6), (999_002, 1)]),
         })
+    }
+
+    #[test]
+    fn set_categories() {
+        use SetCategory::*;
+        let boss = |kinds: &[u8]| (1, kinds.to_vec());
+        assert_eq!(categorize("Erudite Occultist's Vestments", "Mythic", &[]), Raid);
+        assert_eq!(categorize("Sanctified Bloodmage's Regalia", "25 Player (Heroic)", &[]), Raid);
+        assert_eq!(categorize("Obsidian Gladiator's Silk Armor", "Elite", &[]), Pvp);
+        assert_eq!(categorize("Verdant Gladiator's Chain Armor", "", &[]), Pvp);
+        assert_eq!(categorize("Coreway Regalia", "Dungeons", &[]), Dungeon);
+        assert_eq!(categorize("Golden Clockwork Attire", "Gold", &[(10, vec![]), (10, vec![])]), TradingPost);
+        // Sans libellé utile : la majorité des pièces tombe sur des boss de raid.
+        assert_eq!(categorize("Diabolic Raiment", "", &[boss(&[2]), boss(&[2, 1]), (4, vec![])]), Raid);
+        assert_eq!(categorize("Nighthide Coat", "Green", &[boss(&[1]), (4, vec![])]), Dungeon);
+        assert_eq!(categorize("Faewoven Regalia", "Campaign", &[(2, vec![]), boss(&[2]), (2, vec![])]), Other);
     }
 
     #[test]

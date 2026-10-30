@@ -13,7 +13,7 @@ use tauri::{Manager, State};
 use tokio::sync::Mutex;
 use wowscan_core::cache::Cache;
 use wowscan_core::collection::{self, AddonState, Character, SetProgress};
-use wowscan_core::gamedata::{BossDrop, GameData, Source, Variant};
+use wowscan_core::gamedata::{BossDrop, GameData, SetCategory, Source, Variant};
 use wowscan_core::items::{self, ItemInfo};
 use wowscan_core::optimize::{self, Plan, PlanInput};
 use wowscan_core::realms::{self, ConnectedRealm};
@@ -187,6 +187,8 @@ struct SetSummary {
     label: Option<u32>,
     class_mask: u32,
     expansion: u32,
+    /// Raid, donjon, JcJ, comptoir ou autre.
+    category: SetCategory,
     /// Nombre d'apparences distinctes (une par emplacement, en général).
     appearances: usize,
 }
@@ -232,6 +234,7 @@ fn summary(set: &wowscan_core::gamedata::TransmogSet) -> SetSummary {
         label: set.label,
         class_mask: set.class_mask,
         expansion: set.expansion,
+        category: set.category,
         appearances: appearances.len(),
     }
 }
