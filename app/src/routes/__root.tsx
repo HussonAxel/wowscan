@@ -1,7 +1,9 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { createRootRouteWithContext, Link, Outlet, useMatchRoute } from '@tanstack/react-router'
-import { Command, Gem, ScanSearch, Settings, Shirt } from 'lucide-react'
+import { Command, Download, Gem, ScanSearch, Settings, Shirt } from 'lucide-react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -22,7 +24,9 @@ import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { CommandPalette } from '@/features/command-palette'
 import { useScan } from '@/features/scan/scan-store'
+import { checkForUpdate, downloadPercent, installUpdate, useUpdate } from '@/features/update/update-store'
 import { openCommandMenu } from '@/components/ui/command-menu'
+import i18n from '@/i18n'
 import { isDemo } from '@/lib/api'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -32,6 +36,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootLayout() {
   const { t } = useTranslation()
   const scan = useScan()
+  const update = useUpdate()
+
+  // Une seule vérification au lancement (ensuite depuis les paramètres).
+  useEffect(() => {
+    void checkForUpdate().then((available) => {
+      if (available)
+        toast(i18n.t('update.available', { version: available.version }), {
+          duration: 15_000,
+          action: { label: i18n.t('update.install'), onClick: () => installUpdate().catch(() => toast.error(i18n.t('update.failed'))) },
+        })
+    })
+  }, [])
 
   return (
     <TooltipProvider>
@@ -67,6 +83,21 @@ function RootLayout() {
           </SidebarContent>
           <SidebarFooter>
             <SidebarMenu>
+              {(update.status === 'available' || update.status === 'downloading') && update.update && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => installUpdate().catch(() => toast.error(t('update.failed')))}
+                    disabled={update.status === 'downloading'}
+                    className="text-primary"
+                  >
+                    <Download />
+                    <span>{t('update.sidebar', { version: update.update.version })}</span>
+                  </SidebarMenuButton>
+                  {update.status === 'downloading' && (
+                    <SidebarMenuBadge className="tabular-nums text-primary">{downloadPercent(update) ?? 0}%</SidebarMenuBadge>
+                  )}
+                </SidebarMenuItem>
+              )}
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => openCommandMenu()} className="text-muted-foreground">
                   <Command />

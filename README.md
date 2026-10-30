@@ -32,6 +32,17 @@ pnpm tauri build    # produit l'installateur dans target/release/bundle/
 
 Chaque push sur `main` produit aussi l'installateur Windows dans l'onglet **Actions** de GitHub (artefact `wowscan-windows`).
 
+### Mises à jour
+
+À partir de la 0.2.0, l'app vérifie au lancement s'il existe une nouvelle version, puis la télécharge, l'installe et redémarre en un clic. On peut aussi le faire depuis *Paramètres → Mises à jour*. Les installateurs sont signés, et l'app refuse ceux dont la signature ne correspond pas à la clé publique de `tauri.conf.json`.
+
+Publier une version :
+
+1. Mettre le même numéro dans `app/src-tauri/tauri.conf.json`, `app/package.json` et `Cargo.toml` (`workspace.package`).
+2. Pousser un tag `vX.Y.Z` (`git tag v0.3.0 && git push origin v0.3.0`). Le workflow `release.yml` construit l'installateur signé et publie la release GitHub avec `latest.json`, le fichier que les apps installées consultent.
+
+Le workflow a besoin du secret `TAURI_SIGNING_PRIVATE_KEY`, qui contient la clé privée générée par `pnpm tauri signer generate`. Si cette clé est perdue, les apps déjà installées ne pourront plus se mettre à jour.
+
 ### Identifiants Blizzard (gratuits, 2 minutes)
 
 1. Va sur <https://develop.battle.net/access/clients> et connecte-toi avec ton compte Battle.net.

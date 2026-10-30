@@ -255,6 +255,23 @@ export const fr = {
       notFound: 'Introuvable',
       save: 'Enregistrer',
     },
+    update: {
+      title: 'Mises à jour',
+      current: 'Version installée : {{version}}',
+      check: 'Rechercher',
+      checking: 'Recherche…',
+      upToDate: 'À jour',
+      available: 'Version {{version}} disponible',
+      install: 'Installer et redémarrer',
+      downloading: 'Téléchargement… {{percent}} %',
+      error: 'Impossible de vérifier les mises à jour.',
+    },
+  },
+  update: {
+    available: 'wowscan {{version}} est disponible',
+    install: 'Installer',
+    sidebar: 'Mise à jour {{version}}',
+    failed: 'La mise à jour a échoué.',
   },
   errors: {
     invalid_credentials: 'Identifiants refusés par Blizzard. Vérifie le client ID et le secret.',

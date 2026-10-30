@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleCheck, CircleDashed, ExternalLink, Search } from 'lucide-react'
+import { CircleCheck, CircleDashed, Download, ExternalLink, RefreshCw, Search } from 'lucide-react'
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -12,7 +12,8 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Language } from '@/i18n'
-import { api } from '@/lib/api'
+import { checkForUpdate, downloadPercent, installUpdate, useUpdate } from '@/features/update/update-store'
+import { api, isDemo } from '@/lib/api'
 import { useErrorMessage } from '@/lib/errors'
 import { realmName, useApiLocale } from '@/lib/format'
 import { openUrl } from '@/lib/open-url'
@@ -31,6 +32,7 @@ export function SettingsPage() {
       <RealmsSection />
       <NewRealmCostSection />
       <GameDirSection />
+      {!isDemo && <UpdateSection />}
     </div>
   )
 }
@@ -294,6 +296,53 @@ function GameDirSection() {
         </Button>
       </form>
       {found && <p className="truncate font-mono text-xs text-muted-foreground">{found}</p>}
+    </Section>
+  )
+}
+
+function UpdateSection() {
+  const { t } = useTranslation()
+  const update = useUpdate()
+  const percent = downloadPercent(update)
+  const install = () => installUpdate().catch(() => toast.error(t('update.failed')))
+  return (
+    <Section
+      title={t('settings.update.title')}
+      description={t('settings.update.current', { version: update.current ?? '…' })}
+      aside={
+        update.status === 'available' || update.status === 'downloading' ? (
+          <Button onClick={install} disabled={update.status === 'downloading'}>
+            <Download />
+            {update.status === 'downloading'
+              ? t('settings.update.downloading', { percent: percent ?? 0 })
+              : t('settings.update.install')}
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => void checkForUpdate()} disabled={update.status === 'checking'}>
+            <RefreshCw className={update.status === 'checking' ? 'animate-spin' : undefined} />
+            {update.status === 'checking' ? t('settings.update.checking') : t('settings.update.check')}
+          </Button>
+        )
+      }
+    >
+      {update.update && (
+        <p className="text-sm font-medium text-primary">{t('settings.update.available', { version: update.update.version })}</p>
+      )}
+      {update.status === 'upToDate' && (
+        <Badge variant="outline" className="border-primary/30 text-primary">
+          <CircleCheck /> {t('settings.update.upToDate')}
+        </Badge>
+      )}
+      {update.status === 'downloading' && (
+        <div className="h-1.5 overflow-hidden rounded-full bg-foreground/10">
+          <div className="h-full bg-primary transition-[width]" style={{ width: `${percent ?? 0}%` }} />
+        </div>
+      )}
+      {update.status === 'error' && (
+        <p className="text-sm text-destructive">
+          {t('settings.update.error')} <span className="text-xs text-muted-foreground">{String(update.error)}</span>
+        </p>
+      )}
     </Section>
   )
 }

@@ -1,0 +1,48 @@
+name: Release
+
+# Pousser un tag `vX.Y.Z` (même version que app/src-tauri/tauri.conf.json) publie une release
+# GitHub avec l'installateur et `latest.json`, que l'app lit pour se mettre à jour.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Installateur Windows signé
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version du tag = version de l'app
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "::error::tag $GITHUB_REF_NAME, app $version"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: app/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: wowscan ${{ github.ref_name }}
+          releaseBody: Installe le .msi ou le .exe, ou mets à jour depuis l'app (Paramètres → Mises à jour).
+          releaseDraft: false
+          includeUpdaterJson: true

@@ -59,7 +59,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tauri build
+      # Sans clé de signature ici : les fichiers de mise à jour ne sont produits que par release.yml.
+      - run: pnpm tauri build --config src-tauri/tauri.ci.conf.json
       - uses: actions/upload-artifact@v4
         with:
           name: wowscan-windows

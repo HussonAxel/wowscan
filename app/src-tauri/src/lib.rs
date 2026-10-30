@@ -374,6 +374,8 @@ fn plan_purchases(input: PlanInput) -> Plan {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let cache_dir: PathBuf = app.path().app_cache_dir()?;
             app.manage(AppState { cache: Cache::new(cache_dir), client: Mutex::new(None), gamedata: Mutex::new(None) });

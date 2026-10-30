@@ -256,6 +256,23 @@ export const en: Messages = {
       notFound: 'Not found',
       save: 'Save',
     },
+    update: {
+      title: 'Updates',
+      current: 'Installed version: {{version}}',
+      check: 'Check',
+      checking: 'Checking…',
+      upToDate: 'Up to date',
+      available: 'Version {{version}} available',
+      install: 'Install and restart',
+      downloading: 'Downloading… {{percent}}%',
+      error: 'Could not check for updates.',
+    },
+  },
+  update: {
+    available: 'wowscan {{version}} is available',
+    install: 'Install',
+    sidebar: 'Update {{version}}',
+    failed: 'The update failed.',
   },
   errors: {
     invalid_credentials: 'Blizzard rejected the credentials. Check the client ID and secret.',
