@@ -32,6 +32,7 @@ import { startScan, useScan } from '@/features/scan/scan-store'
 import { useVariantLabels } from '@/features/scan/use-scan-data'
 import { addTargets, setTargets, useDebounced, useSetMeta } from '@/features/sets/set-helpers'
 import { api } from '@/lib/api'
+import { useItemInfos } from '@/lib/item-infos'
 import { useErrorMessage } from '@/lib/errors'
 import { localized, qualityColor, realmName, useApiLocale } from '@/lib/format'
 import { labelsText } from '@/lib/labels'
@@ -520,11 +521,7 @@ function CollectionPanel({ set, offers, scan }: { set: SetCollection; offers: Ma
   const details = useQuery({ queryKey: ['set', set.id], queryFn: () => api.setDetails(set.id) })
   const data = details.data
   const pieceItems = data?.pieces.map((p) => p.setSources[0].itemId) ?? []
-  const infos = useQuery({
-    queryKey: ['items', pieceItems],
-    queryFn: () => api.itemInfos(pieceItems),
-    enabled: pieceItems.length > 0,
-  })
+  const infos = useItemInfos(pieceItems)
 
   if (!data) {
     return (
@@ -577,7 +574,7 @@ function CollectionPanel({ set, offers, scan }: { set: SetCollection; offers: Ma
         <Progress value={set.collected} max={Math.max(set.total, 1)} label={t('collections.progress', { collected: set.collected, total: set.total })} showValue />
       </ArcScope>
 
-      <SetPreview pieces={data.pieces} missing={missingSet} infos={infos.data} />
+      <SetPreview pieces={data.pieces} missing={missingSet} infos={infos} />
 
       {missingPieces.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
@@ -607,7 +604,7 @@ function CollectionPanel({ set, offers, scan }: { set: SetCollection; offers: Ma
               <MissingPiece
                 key={piece.appearanceId}
                 piece={piece}
-                info={infos.data?.[piece.setSources[0].itemId]}
+                info={infos[piece.setSources[0].itemId]}
                 offer={offers.get(piece.appearanceId)}
                 scan={scan}
                 language={i18n.language}
@@ -624,7 +621,7 @@ function CollectionPanel({ set, offers, scan }: { set: SetCollection; offers: Ma
           </h3>
           <ul className="grid gap-1.5 sm:grid-cols-2">
             {ownedPieces.map((piece) => {
-              const info = infos.data?.[piece.setSources[0].itemId]
+              const info = infos[piece.setSources[0].itemId]
               return (
                 <li key={piece.appearanceId} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground">
                   <CircleCheck className="size-4 shrink-0 text-primary" />

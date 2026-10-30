@@ -9,6 +9,7 @@ import { ArcScope } from '@/components/arc-scope'
 import { EmptyState } from '@/components/arc/empty-state/empty-state'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { useItemInfos } from '@/lib/item-infos'
 import { useErrorMessage } from '@/lib/errors'
 import { localized, useApiLocale } from '@/lib/format'
 import { optionLabel } from '@/lib/labels'
@@ -62,13 +63,7 @@ export function ScannerPage() {
     for (const view of views) for (const option of view.options) for (const r of option.realms.slice(0, 12)) ids.add(r.itemId)
     return [...ids].sort((a, b) => a - b)
   }, [targets, views])
-  const infos = useQuery({
-    queryKey: ['items', infoIds],
-    queryFn: () => api.itemInfos(infoIds),
-    enabled: ready && infoIds.length > 0,
-    placeholderData: (previous) => previous,
-  })
-  const infoMap = infos.data ?? {}
+  const infoMap = useItemInfos(infoIds, ready)
 
   const realms = useMemo(() => new Map(scan.result?.realms.map((r) => [r.id, r]) ?? []), [scan.result])
   const owned = useMemo(() => new Set(ownedRealms), [ownedRealms])

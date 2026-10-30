@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { startScan } from '@/features/scan/scan-store'
 import { useVariantLabels } from '@/features/scan/use-scan-data'
 import { api } from '@/lib/api'
+import { useItemInfos } from '@/lib/item-infos'
 import { useErrorMessage } from '@/lib/errors'
 import { localized, qualityColor, useApiLocale } from '@/lib/format'
 import { labelsText } from '@/lib/labels'
@@ -162,11 +163,7 @@ function SetPanel({ id }: { id: number }) {
   const details = useQuery({ queryKey: ['set', id], queryFn: () => api.setDetails(id) })
   const set = details.data
   const pieceItems = set?.pieces.map((p) => p.setSources[0].itemId) ?? []
-  const infos = useQuery({
-    queryKey: ['items', pieceItems],
-    queryFn: () => api.itemInfos(pieceItems),
-    enabled: pieceItems.length > 0,
-  })
+  const infos = useItemInfos(pieceItems)
 
   if (!set) {
     return (
@@ -230,7 +227,7 @@ function SetPanel({ id }: { id: number }) {
 
       <ul className="grid gap-2 sm:grid-cols-2">
         {set.pieces.map((piece) => {
-          const info = infos.data?.[piece.setSources[0].itemId]
+          const info = infos[piece.setSources[0].itemId]
           const sources = new Set(piece.allSources.map((s) => s.itemId)).size
           return (
             <li key={piece.appearanceId} className="flex items-center gap-3 rounded-xl bg-foreground/[0.025] p-2.5 ring-1 ring-foreground/6">

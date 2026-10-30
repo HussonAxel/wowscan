@@ -7,6 +7,8 @@ import type {
   ItemInfo,
   ItemRef,
   LocalizedString,
+  MountCollection,
+  MountTooltip,
   ParsedRefs,
   Plan,
   PlanInput,
@@ -37,6 +39,9 @@ export interface Api {
   installAddon(gameDir: string | null): Promise<CollectionStatus>
   /** Progression de chaque ensemble d'après l'export de l'addon. */
   collectionSets(gameDir: string | null): Promise<SetCollection[]>
+  /** Montures du jeu et celles collectées d'après l'export de l'addon. */
+  collectionMounts(gameDir: string | null): Promise<MountCollection>
+  mountTooltip(mountId: number, itemId: number | null): Promise<MountTooltip>
   connectedRealms(): Promise<ConnectedRealm[]>
   itemInfos(ids: number[]): Promise<Record<number, ItemInfo>>
   scan(ids: number[], onEvent: (event: ScanEvent) => void): Promise<ScanResult>
@@ -57,6 +62,8 @@ const tauriApi: Api = {
   collectionStatus: (gameDir) => invoke('collection_status', { gameDir }),
   installAddon: (gameDir) => invoke('install_addon', { gameDir }),
   collectionSets: (gameDir) => invoke('collection_sets', { gameDir }),
+  collectionMounts: (gameDir) => invoke('collection_mounts', { gameDir }),
+  mountTooltip: (mountId, itemId) => invoke('mount_tooltip', { mountId, itemId }),
   connectedRealms: () => invoke('connected_realms'),
   itemInfos: (ids) => invoke('item_infos', { ids }),
   scan: (ids, onEvent) => {

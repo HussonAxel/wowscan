@@ -6,6 +6,7 @@
 //! - [`auctions`] : téléchargement des enchères, réduites à l'essentiel et mises en cache.
 //! - [`gamedata`] : tables du jeu (versions des objets, apparences, ensembles), via wago.tools.
 //! - [`items`] : noms (fr/en), qualité et icône des objets.
+//! - [`icons`] : icônes haute définition d'un pack installé dans le dossier du jeu.
 //! - [`scan`] : recherche d'une liste d'objets sur tous les royaumes.
 //! - [`optimize`] : choix des royaumes où acheter pour payer le moins cher.
 //! - [`search`] : objets retrouvés par leur nom exact (copies du chat sans liens).
@@ -18,8 +19,10 @@ pub mod client;
 pub mod collection;
 pub mod error;
 pub mod gamedata;
+pub mod icons;
 pub mod items;
 pub mod model;
+pub mod mounts;
 pub mod optimize;
 pub mod realms;
 pub mod refs;

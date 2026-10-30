@@ -1,6 +1,6 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { type QueryClient, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, Gem } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ArcScope } from '@/components/arc-scope'
@@ -10,8 +10,10 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { Skeleton } from '@/components/ui/skeleton'
 import { AddonCard, slotRank, useCollectionStatus, wowheadUrl } from '@/features/collections/collections-page'
 import { api } from '@/lib/api'
+import { useGameIcon } from '@/lib/game-icon'
 import { useErrorMessage } from '@/lib/errors'
 import { localized, useApiLocale } from '@/lib/format'
+import { prefetchItems, useItemInfos } from '@/lib/item-infos'
 import { openUrl } from '@/lib/open-url'
 import { useSettings } from '@/lib/settings'
 import type { ItemInfo, SetCollection, SetDifficulty, SetPiece } from '@/lib/types'
@@ -36,6 +38,13 @@ interface RaidRow {
 interface ExpansionGroup {
   expansion: number
   raids: RaidRow[]
+}
+
+function ClassIcon({ icon, label }: { icon: string; label: string }) {
+  const icons = useGameIcon()
+  const src = icons.pick(`https://render.worldofwarcraft.com/eu/icons/56/classicon_${icon}.jpg`)
+  if (!src) return <span className="mx-auto block size-6 rounded-md bg-foreground/[0.06]" />
+  return <img src={src} alt={label} loading="lazy" onError={() => icons.fail(src)} className="mx-auto size-6 rounded-md" />
 }
 
 const allowsClass = (set: SetCollection, classId: number) => set.classMask === 0 || (set.classMask & (1 << (classId - 1))) !== 0
@@ -66,6 +75,15 @@ function raidGroups(sets: SetCollection[], difficulty: SetDifficulty): Expansion
   return [...groups]
     .sort(([a], [b]) => b - a)
     .map(([expansion, list]) => ({ expansion, raids: list.sort((a, b) => b.instanceId - a.instanceId) }))
+}
+
+/** Prépare les pièces d'un raid en tâche de fond : le survol d'une case les trouve déjà chargées. */
+function prefetchRaid(queryClient: QueryClient, raid: RaidRow) {
+  void Promise.all(
+    raid.sets.map((set) => queryClient.fetchQuery({ queryKey: ['set', set.id], queryFn: () => api.setDetails(set.id) })),
+  )
+    .then((details) => prefetchItems(queryClient, new Set(details.flatMap((d) => (d?.pieces ?? []).flatMap((p) => p.setSources[0]?.itemId ?? [])))))
+    .catch(() => undefined)
 }
 
 export function RaidsPage() {
@@ -112,6 +130,23 @@ function RaidOverview({ scannedAt }: { scannedAt: number | null }) {
   })
   const groups = useMemo(() => raidGroups(query.data ?? [], difficulty), [query.data, difficulty])
 
+  // L'extension la plus récente en tâche de fond ; les autres raids au survol de leur ligne.
+  const queryClient = useQueryClient()
+  const prefetched = useRef(new Set<string>())
+  const prefetch = useCallback(
+    (raid: RaidRow) => {
+      const key = `${raid.instanceId}:${difficulty}`
+      if (prefetched.current.has(key)) return
+      prefetched.current.add(key)
+      prefetchRaid(queryClient, raid)
+    },
+    [difficulty, queryClient],
+  )
+  const latest = groups[0]
+  useEffect(() => {
+    for (const raid of latest?.raids ?? []) prefetch(raid)
+  }, [latest, prefetch])
+
   const toggle = (expansion: number) =>
     setCollapsed((current) => {
       const next = new Set(current)
@@ -155,12 +190,7 @@ function RaidOverview({ scannedAt }: { scannedAt: number | null }) {
                 </th>
                 {CLASS_IDS.map((id) => (
                   <th key={id} scope="col" title={classes[id]} className="sticky top-0 z-20 bg-card px-1 py-2">
-                    <img
-                      src={`https://render.worldofwarcraft.com/eu/icons/56/classicon_${CLASS_ICONS[id]}.jpg`}
-                      alt={classes[id]}
-                      loading="lazy"
-                      className="mx-auto size-6 rounded-md"
-                    />
+                    <ClassIcon icon={CLASS_ICONS[id]} label={classes[id]} />
                   </th>
                 ))}
               </tr>
@@ -184,7 +214,7 @@ function RaidOverview({ scannedAt }: { scannedAt: number | null }) {
                   </tr>
                   {!closed &&
                     group.raids.map((raid) => (
-                      <tr key={raid.instanceId} className="group/row">
+                      <tr key={raid.instanceId} className="group/row" onMouseEnter={() => prefetch(raid)}>
                         <th
                           scope="row"
                           className="sticky left-0 z-10 max-w-64 truncate border-t border-foreground/5 bg-card px-4 py-2 text-left font-normal group-hover/row:bg-muted"
@@ -250,12 +280,7 @@ function CellDetails({ raid, sets, className }: { raid: RaidRow; sets: SetCollec
   const itemIds = [
     ...new Set(details.flatMap((d) => d.data?.pieces.map((p) => p.setSources[0]?.itemId).filter((id) => id !== undefined) ?? [])),
   ].sort((a, b) => a - b)
-  const infos = useQuery({
-    queryKey: ['raid-cell-items', itemIds],
-    queryFn: () => api.itemInfos(itemIds),
-    enabled: itemIds.length > 0,
-    retry: false,
-  })
+  const infos = useItemInfos(itemIds)
 
   return (
     <div className="space-y-3">
@@ -283,7 +308,7 @@ function CellDetails({ raid, sets, className }: { raid: RaidRow; sets: SetCollec
                       piece={piece}
                       owned={!missing.has(piece.appearanceId)}
                       raidId={raid.instanceId}
-                      item={infos.data?.[piece.setSources[0]?.itemId ?? 0]}
+                      item={infos[piece.setSources[0]?.itemId ?? 0]}
                     />
                   ))}
               </ul>

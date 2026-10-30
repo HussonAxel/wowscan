@@ -214,6 +214,30 @@ export const mockApi: Api = {
     await sleep(200)
     return sets.map(demoProgress)
   },
+  collectionMounts: async () => {
+    await sleep(200)
+    const name = (text: string) => ({ en_GB: text, fr_FR: text })
+    return {
+      exported: true,
+      mounts: [
+        { id: 1818, spellId: 1, itemId: null, icon: null, name: name('Raid mount'), source: name('Drop: Boss'), category: 'raid' as const, expansion: 9, collected: true },
+        { id: 1819, spellId: 2, itemId: null, icon: null, name: name('Rare mount'), source: name('Drop: Rare'), category: 'elite' as const, expansion: 9, collected: false },
+        { id: 395, spellId: 3, itemId: null, icon: null, name: name('Faction mount'), source: name('Faction: Ramkahen'), category: 'reputation' as const, expansion: 3, collected: false },
+      ],
+    }
+  },
+  mountTooltip: async () => {
+    const name = (text: string) => ({ en_GB: text, fr_FR: text })
+    return {
+      quality: 'EPIC',
+      level: name('Item Level 10'),
+      binding: name('Binds when picked up'),
+      kind: name('Mount'),
+      spells: [name('Teaches you how to summon this mount.')],
+      requirements: [name('Requires Apprentice Riding')],
+      description: name('A demo mount.'),
+    }
+  },
   connectedRealms: async () => realms,
   itemInfos: async (ids) => Object.fromEntries(ids.flatMap((id) => (infos[id] ? [[id, infos[id]]] : []))),
   scan: async (ids, onEvent) => {

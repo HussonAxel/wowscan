@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CollectionsRouteImport } from './routes/collections'
+import { Route as MountsRouteImport } from './routes/mounts'
 import { Route as RaidsRouteImport } from './routes/raids'
 import { Route as SetsRouteImport } from './routes/sets'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const CollectionsRoute = CollectionsRouteImport.update({
   id: '/collections',
   path: '/collections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MountsRoute = MountsRouteImport.update({
+  id: '/mounts',
+  path: '/mounts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RaidsRoute = RaidsRouteImport.update({
@@ -44,6 +50,7 @@ const SettingsRoute = SettingsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/collections': typeof CollectionsRoute
+  '/mounts': typeof MountsRoute
   '/raids': typeof RaidsRoute
   '/sets': typeof SetsRoute
   '/settings': typeof SettingsRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/collections': typeof CollectionsRoute
+  '/mounts': typeof MountsRoute
   '/raids': typeof RaidsRoute
   '/sets': typeof SetsRoute
   '/settings': typeof SettingsRoute
@@ -59,21 +67,30 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/collections': typeof CollectionsRoute
+  '/mounts': typeof MountsRoute
   '/raids': typeof RaidsRoute
   '/sets': typeof SetsRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/collections' | '/raids' | '/sets' | '/settings'
+  fullPaths: '/' | '/collections' | '/mounts' | '/raids' | '/sets' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/collections' | '/raids' | '/sets' | '/settings'
-  id: '__root__' | '/' | '/collections' | '/raids' | '/sets' | '/settings'
+  to: '/' | '/collections' | '/mounts' | '/raids' | '/sets' | '/settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/collections'
+    | '/mounts'
+    | '/raids'
+    | '/sets'
+    | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CollectionsRoute: typeof CollectionsRoute
+  MountsRoute: typeof MountsRoute
   RaidsRoute: typeof RaidsRoute
   SetsRoute: typeof SetsRoute
   SettingsRoute: typeof SettingsRoute
@@ -93,6 +110,13 @@ declare module '@tanstack/react-router' {
       path: '/collections'
       fullPath: '/collections'
       preLoaderRoute: typeof CollectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mounts': {
+      id: '/mounts'
+      path: '/mounts'
+      fullPath: '/mounts'
+      preLoaderRoute: typeof MountsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/raids': {
@@ -122,6 +146,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CollectionsRoute: CollectionsRoute,
+  MountsRoute: MountsRoute,
   RaidsRoute: RaidsRoute,
   SetsRoute: SetsRoute,
   SettingsRoute: SettingsRoute,

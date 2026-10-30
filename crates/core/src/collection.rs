@@ -38,6 +38,8 @@ pub struct Collection {
     /// Date de l'analyse en jeu (secondes Unix).
     pub scanned_at: u64,
     pub appearances: HashSet<u32>,
+    /// Montures collectées ; `None` si l'export vient d'une version de l'addon qui ne les donnait pas.
+    pub mounts: Option<HashSet<u32>>,
     pub characters: Vec<Character>,
 }
 
@@ -62,6 +64,7 @@ pub struct SetProgress {
 
 static SCANNED_AT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\["scannedAt"\]\s*=\s*(\d+)"#).unwrap());
 static APPEARANCES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\["appearances"\]\s*=\s*"([0-9,]*)""#).unwrap());
+static MOUNTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\["mounts"\]\s*=\s*"([0-9,]*)""#).unwrap());
 static CHARACTERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\["characters"\]\s*=\s*\{([^}]*)\}"#).unwrap());
 static CHARACTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\["([^"]+)-([^"-]+)"\]\s*=\s*(\d+)"#).unwrap());
 
@@ -82,6 +85,11 @@ pub fn parse(text: &str) -> Option<(u64, HashSet<u32>, Vec<Character>)> {
         .unwrap_or_default();
     characters.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.realm.cmp(&b.realm)));
     Some((scanned_at, appearances, characters))
+}
+
+/// Montures collectées d'après le contenu de `WowScan.lua`.
+pub fn parse_mounts(text: &str) -> Option<HashSet<u32>> {
+    Some(MOUNTS.captures(text)?[1].split(',').filter_map(|id| id.parse().ok()).collect())
 }
 
 /// Dossier `_retail_` du jeu : celui indiqué (racine ou `_retail_`), sinon les emplacements habituels.
@@ -134,6 +142,7 @@ pub fn read(game_dir: &Path) -> Result<Option<Collection>> {
         },
         file,
         appearances,
+        mounts: parse_mounts(&text),
         characters,
     }))
 }
@@ -228,6 +237,8 @@ WowScanDB = {
         );
         assert!(parse("WowScanDB = {}").is_none());
         assert_eq!(parse(r#"["appearances"] = """#).unwrap().1.len(), 0);
+        assert_eq!(parse_mounts(SAVED), None, "older exports have no mounts");
+        assert_eq!(parse_mounts(r#"["mounts"] = "6,791""#), Some(HashSet::from([6, 791])));
     }
 
     #[test]

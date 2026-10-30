@@ -20,13 +20,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::{Cache, now};
 use crate::model::LocalizedString;
+use crate::mounts::{self, Mount};
 use crate::{Error, Result};
 
 const WAGO_BASE: &str = "https://wago.tools/db2";
 const CACHE_FILE: &str = "gamedata.json.gz";
 const TTL_SECS: u64 = 7 * 24 * 3600;
 /// Incrémenté quand le format du cache change, pour le reconstruire.
-const FORMAT: u32 = 4;
+const FORMAT: u32 = 9;
 
 /// Types de bonus utiles (colonne `Type` de `ItemBonus`).
 const BONUS_NAME_DESCRIPTION: u32 = 4;
@@ -133,14 +134,14 @@ pub enum SetCategory {
 }
 
 /// Type d'instance (`InstanceType` de la table `Map`).
-const INSTANCE_DUNGEON: u8 = 1;
-const INSTANCE_RAID: u8 = 2;
+pub(crate) const INSTANCE_DUNGEON: u8 = 1;
+pub(crate) const INSTANCE_RAID: u8 = 2;
 /// `TransmogSourceTypeEnum` : comptoir.
 const SOURCE_TRADING_POST: u8 = 10;
 /// `Flags` de `JournalInstance` : boss de zone (et Baradin, dont le butin vient des autres raids).
-const INSTANCE_FLAG_WORLD: u32 = 2;
+pub(crate) const INSTANCE_FLAG_WORLD: u32 = 2;
 /// « Draenor » : boss de zone rangés sur la carte de Hautchamp, sans le drapeau.
-const INSTANCE_DRAENOR: u32 = 557;
+pub(crate) const INSTANCE_DRAENOR: u32 = 557;
 
 /// Le libellé (anglais) suffit souvent : « Mythic », « Gladiator », « Dungeons »… Sinon on regarde
 /// d'où viennent les pièces : comptoir, ou boss de raid ou de donjon pour au moins la moitié d'entre elles.
@@ -213,6 +214,9 @@ struct Stored {
     instances: HashMap<u32, LocalizedString>,
     /// Pièces d'ensemble → emplacement (`InventoryType` : 1 tête, 3 épaules, 5 torse…).
     slots: HashMap<u32, u8>,
+    mounts: Vec<Mount>,
+    /// Fichier d'icône → son nom dans le jeu, sans extension : il retrouve l'icône d'un pack installé.
+    icon_names: HashMap<u32, String>,
 }
 
 pub struct GameData {
@@ -310,6 +314,14 @@ impl GameData {
     /// Emplacement d'une pièce d'ensemble (`InventoryType`), s'il est connu.
     pub fn slot(&self, item_id: u32) -> Option<u8> {
         self.stored.slots.get(&item_id).copied()
+    }
+
+    pub fn icon_name(&self, file_id: u32) -> Option<&str> {
+        self.stored.icon_names.get(&file_id).map(String::as_str)
+    }
+
+    pub fn mounts(&self) -> &[Mount] {
+        &self.stored.mounts
     }
 
     pub fn sets(&self) -> &[TransmogSet] {
@@ -418,6 +430,43 @@ async fn download(base: &str) -> Result<Stored> {
         get("Item", None),
         get("Map", None),
     )?;
+    let (mounts_en, mounts_fr, item_effects, item_x_effects, tiers, tier_instances, spell_misc) = tokio::try_join!(
+        get("Mount", Some(LOCALES[0].0)),
+        get("Mount", Some(LOCALES[1].0)),
+        get("ItemEffect", None),
+        get("ItemXItemEffect", None),
+        get("JournalTier", None),
+        get("JournalTierXInstance", None),
+        get("SpellMisc", None),
+    )?;
+    let mounts = mounts::build(&mounts::Tables {
+        mounts_en: &mounts_en,
+        mounts_fr: &mounts_fr,
+        item_effects: &item_effects,
+        item_x_effects: &item_x_effects,
+        journal_items: &journal_items,
+        encounters: &encounters_en,
+        instances: &instances_en,
+        maps: &maps,
+        tiers: &tiers,
+        tier_instances: &tier_instances,
+        spell_misc: &spell_misc,
+    })?;
+
+    #[derive(Deserialize)]
+    struct ManifestRow {
+        #[serde(rename = "ID")]
+        id: u32,
+        #[serde(rename = "FilePath")]
+        path: String,
+        #[serde(rename = "FileName")]
+        name: String,
+    }
+    let icon_names: HashMap<u32, String> = rows::<ManifestRow>(&get("ManifestInterfaceData", None).await?)?
+        .into_iter()
+        .filter(|r| r.path.eq_ignore_ascii_case("interface\\icons\\"))
+        .filter_map(|r| r.name.rsplit_once('.').map(|(stem, _)| (r.id, stem.to_owned())))
+        .collect();
 
     #[derive(Deserialize)]
     #[serde(rename_all = "PascalCase")]
@@ -679,10 +728,12 @@ async fn download(base: &str) -> Result<Stored> {
         encounters,
         instances,
         slots,
+        mounts,
+        icon_names,
     })
 }
 
-fn rows<T: DeserializeOwned>((url, text): &(String, String)) -> Result<Vec<T>> {
+pub(crate) fn rows<T: DeserializeOwned>((url, text): &(String, String)) -> Result<Vec<T>> {
     csv::Reader::from_reader(text.as_bytes())
         .deserialize()
         .collect::<std::result::Result<Vec<T>, _>>()
@@ -742,6 +793,8 @@ pub(crate) mod tests {
             encounters: HashMap::from([(1438, Encounter { name: labels(&[(0, "Archimonde", "Archimonde")])[&0].clone(), instance: 669 })]),
             instances: labels(&[(669, "Hellfire Citadel", "Citadelle des Flammes infernales")]),
             slots: HashMap::from([(124182, 6), (999_002, 1)]),
+            mounts: Vec::new(),
+            icon_names: HashMap::new(),
         })
     }
 

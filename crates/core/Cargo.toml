@@ -10,6 +10,7 @@ license.workspace = true
 csv.workspace = true
 flate2.workspace = true
 futures.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "tga"] }
 regex.workspace = true
 reqwest.workspace = true
 serde.workspace = true

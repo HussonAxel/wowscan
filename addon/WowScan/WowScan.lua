@@ -3,7 +3,7 @@
 -- Le jeu n'expose pas la liste des apparences collectées d'un coup : on parcourt les
 -- identifiants de source (ItemModifiedAppearance) un par un, quelques milliers par
 -- image pour ne pas figer le jeu, et on garde l'apparence (visualID) de chaque source
--- collectée. Le résultat est écrit dans WowScanDB, que le jeu enregistre sur disque
+-- collectée, ainsi que les montures du compte. Le résultat est écrit dans WowScanDB, que le jeu enregistre sur disque
 -- au /reload ou à la déconnexion.
 
 local BATCH = 4000      -- sources lues par image
@@ -21,6 +21,18 @@ local verbose = false
 local collected = nil   -- [appearanceID] = true, après un premier parcours
 local writeQueued = false
 
+local function collectedMounts()
+    local ids = {}
+    for _, mountID in ipairs(C_MountJournal.GetMountIDs()) do
+        local isCollected = select(11, C_MountJournal.GetMountInfoByID(mountID))
+        if isCollected then
+            ids[#ids + 1] = mountID
+        end
+    end
+    table.sort(ids)
+    return table.concat(ids, ",")
+end
+
 local function save()
     local ids = {}
     for id in pairs(collected) do
@@ -32,6 +44,7 @@ local function save()
     WowScanDB.scannedAt = time()
     WowScanDB.count = #ids
     WowScanDB.appearances = table.concat(ids, ",")
+    WowScanDB.mounts = collectedMounts()
 
     local name, realm = UnitFullName("player")
     realm = realm or GetRealmName()
@@ -74,13 +87,8 @@ local function startScan()
     end)
 end
 
--- Une nouvelle apparence : on l'ajoute sans tout reparcourir (regroupé sur 2 s).
-local function onSourceAdded(sourceID)
-    if not collected then return end
-    local info = sourceID and C_TransmogCollection.GetSourceInfo(sourceID)
-    if info and info.visualID and info.visualID > 0 then
-        collected[info.visualID] = true
-    end
+-- Regroupe les écritures sur 2 s.
+local function queueWrite()
     if not writeQueued then
         writeQueued = true
         C_Timer.After(2, function()
@@ -90,9 +98,20 @@ local function onSourceAdded(sourceID)
     end
 end
 
+-- Une nouvelle apparence : on l'ajoute sans tout reparcourir.
+local function onSourceAdded(sourceID)
+    if not collected then return end
+    local info = sourceID and C_TransmogCollection.GetSourceInfo(sourceID)
+    if info and info.visualID and info.visualID > 0 then
+        collected[info.visualID] = true
+    end
+    queueWrite()
+end
+
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("TRANSMOG_COLLECTION_SOURCE_ADDED")
 frame:RegisterEvent("TRANSMOG_COLLECTION_SOURCE_REMOVED")
+frame:RegisterEvent("NEW_MOUNT_ADDED")
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         C_Timer.After(5, startScan)
@@ -100,6 +119,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
         onSourceAdded(...)
     elseif event == "TRANSMOG_COLLECTION_SOURCE_REMOVED" then
         C_Timer.After(2, startScan)
+    elseif event == "NEW_MOUNT_ADDED" then
+        queueWrite()
     end
 end)
 

@@ -1,6 +1,7 @@
 //! Fiches d'objets (nom en fr/en, qualité, type, icône), mises en cache pour de bon.
 
 use std::collections::HashMap;
+use std::sync::{Mutex, PoisonError};
 
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,8 @@ use crate::model::LocalizedString;
 use crate::{BlizzardClient, Error, Result};
 
 const CACHE_FILE: &str = "items.json.gz";
+/// Les demandes simultanées lisent, complètent et réécrivent le même fichier.
+static CACHE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,15 +39,15 @@ struct RawItem {
 }
 
 #[derive(Deserialize)]
-struct RawQuality {
+pub(crate) struct RawQuality {
     #[serde(rename = "type")]
-    kind: String,
+    pub(crate) kind: String,
 }
 
 #[derive(Deserialize)]
-struct RawNamed {
+pub(crate) struct RawNamed {
     #[serde(default)]
-    name: LocalizedString,
+    pub(crate) name: LocalizedString,
 }
 
 #[derive(Deserialize)]
@@ -65,24 +68,44 @@ pub async fn item_infos(
     cache: &Cache,
     ids: &[u32],
 ) -> Result<HashMap<u32, ItemInfo>> {
-    let mut known: HashMap<u32, ItemInfo> = cache.read(CACHE_FILE).unwrap_or_default();
+    let mut known = read_known(cache);
     let missing: Vec<u32> = ids.iter().copied().filter(|id| !known.contains_key(id)).collect();
 
+    let mut failure = None;
     if !missing.is_empty() {
         let fetched: Vec<Result<Option<ItemInfo>>> = futures::stream::iter(missing)
             .map(|id| fetch_one(client, id))
             .buffer_unordered(8)
             .collect()
             .await;
+        // Un échec ne doit pas faire perdre les fiches obtenues : elles sont gardées et l'objet en échec sera redemandé.
+        let mut new_items = Vec::new();
         for info in fetched {
-            if let Some(info) = info? {
-                known.insert(info.id, info);
+            match info {
+                Ok(Some(info)) => new_items.push(info),
+                Ok(None) => {}
+                Err(err) => failure = failure.or(Some(err)),
             }
         }
-        cache.write(CACHE_FILE, &known)?;
+        if !new_items.is_empty() {
+            let _guard = CACHE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+            known = cache.read(CACHE_FILE).unwrap_or_default();
+            known.extend(new_items.into_iter().map(|info| (info.id, info)));
+            // Sans cache écrit, les fiches restent valables pour cette réponse.
+            let _ = cache.write(CACHE_FILE, &known);
+        }
     }
 
-    Ok(ids.iter().filter_map(|id| known.get(id).map(|i| (*id, i.clone()))).collect())
+    let found: HashMap<u32, ItemInfo> = ids.iter().filter_map(|id| known.get(id).map(|i| (*id, i.clone()))).collect();
+    match failure {
+        Some(err) if found.is_empty() => Err(err),
+        _ => Ok(found),
+    }
+}
+
+fn read_known(cache: &Cache) -> HashMap<u32, ItemInfo> {
+    let _guard = CACHE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    cache.read(CACHE_FILE).unwrap_or_default()
 }
 
 async fn fetch_one(client: &BlizzardClient, id: u32) -> Result<Option<ItemInfo>> {

@@ -146,6 +146,15 @@ async fn mount_game_tables(server: &MockServer) {
         ("JournalInstance", "ID,Name_lang,Description_lang,MapID\n669,Hellfire Citadel,,1448\n"),
         ("Item", "ID,ClassID,SubclassID,Material,InventoryType,SheatheType\n124182,4,3,5,6,0\n"),
         ("Map", "ID,Directory,InstanceType,ExpansionID\n1448,HellfireRaid,2,5\n"),
+        ("Mount", "Name_lang,SourceText_lang,Description_lang,ID,MountTypeID,Flags,SourceTypeEnum,SourceSpellID\n\
+            Felblaze Infernal,\"|cFFFFD200Drop: |rArchimonde|n\",,791,0,0,0,232405\n\
+            Hidden,,,5,0,0,-1,1\n"),
+        ("ItemEffect", "ID,LegacySlotIndex,TriggerType,Charges,CoolDownMSec,CategoryCoolDownMSec,SpellCategoryID,SpellID\n7,0,6,0,0,0,0,232405\n"),
+        ("ItemXItemEffect", "ID,ItemEffectID,ItemID\n1,7,124182\n"),
+        ("JournalTier", "ID,Name_lang,Expansion\n7,Warlords,600\n"),
+        ("JournalTierXInstance", "ID,JournalTierID,JournalInstanceID\n1,7,669\n"),
+        ("SpellMisc", "ID,DifficultyID,SpellIconFileDataID,SpellID\n1,0,0,1\n2,0,1394953,232405\n3,14,99,232405\n"),
+        ("ManifestInterfaceData", "ID,FilePath,FileName\n1394953,Interface\\ICONS\\,INV_Test_Mount.blp\n"),
     ];
     for (table, csv) in tables {
         Mock::given(method("GET"))
@@ -206,6 +215,13 @@ async fn splits_items_by_version_with_game_tables() {
     assert_eq!(data.label(13145).unwrap().get("fr_FR"), "Mythic", "same table served for both locales");
     assert_eq!(data.drops(124182)[0].instance.get("en_GB"), "Hellfire Citadel");
     assert_eq!(data.slot(124182), Some(6));
+    let mounts = data.mounts();
+    assert_eq!(mounts.len(), 1, "hidden mounts are left out");
+    assert_eq!((mounts[0].id, mounts[0].spell_id, mounts[0].item_id), (791, 232405, Some(124182)));
+    assert_eq!(mounts[0].icon, Some(1394953));
+    assert_eq!(data.icon_name(1394953), Some("INV_Test_Mount"));
+    assert_eq!((mounts[0].category, mounts[0].expansion), (wowscan_core::mounts::MountCategory::Raid, 5));
+    assert_eq!(mounts[0].source.get("en_GB"), "Drop: Archimonde");
 
     let result = scan(&client(&server, "secret"), &cache, &[124182], Some(&data), 2, |_| {}).await.unwrap();
     let variants: Vec<(Option<u32>, Money, Vec<u32>)> = result.items[0]
@@ -223,4 +239,31 @@ async fn splits_items_by_version_with_game_tables() {
         "Mythic, Normal and Heroic are kept apart"
     );
     assert_eq!(result.items[0].variants[0].realms[0].stats.auctions, 2);
+}
+
+#[tokio::test]
+async fn keeps_items_fetched_before_a_failure() {
+    let server = server().await;
+    Mock::given(method("GET"))
+        .and(path("/data/wow/item/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": 1, "name": "One", "quality": {"type": "EPIC"},
+            "item_class": {"name": "Armor"}, "item_subclass": {"name": "Plate"}, "inventory_type": {"name": "Head"}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data/wow/item/2"))
+        .respond_with(ResponseTemplate::new(403))
+        .mount(&server)
+        .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let cache = Cache::new(dir.path());
+    let client = client(&server, "secret");
+    let found = wowscan_core::items::item_infos(&client, &cache, &[1, 2]).await.unwrap();
+    assert_eq!(found.keys().copied().collect::<Vec<_>>(), vec![1]);
+    let again = wowscan_core::items::item_infos(&client, &cache, &[1]).await.unwrap();
+    assert_eq!(again[&1].quality, "EPIC");
+    assert!(wowscan_core::items::item_infos(&client, &cache, &[2]).await.is_err(), "nothing found: the error is reported");
 }

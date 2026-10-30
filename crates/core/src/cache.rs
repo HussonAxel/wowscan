@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use flate2::Compression;
@@ -42,11 +43,16 @@ impl Cache {
         std::fs::create_dir_all(&self.root).map_err(io)?;
 
         let json = serde_json::to_vec(value).expect("les types du cache sont sérialisables");
-        let tmp = path.with_extension("tmp");
+        // Un nom par écriture : deux écritures simultanées ne se marchent pas dessus.
+        static NEXT_TMP: AtomicU64 = AtomicU64::new(0);
+        let tmp = path.with_extension(format!("{}.{}.tmp", std::process::id(), NEXT_TMP.fetch_add(1, Ordering::Relaxed)));
         let mut encoder = GzEncoder::new(std::fs::File::create(&tmp).map_err(io)?, Compression::fast());
         encoder.write_all(&json).map_err(io)?;
         encoder.finish().map_err(io)?;
-        std::fs::rename(&tmp, &path).map_err(io)
+        std::fs::rename(&tmp, &path).map_err(|source| {
+            let _ = std::fs::remove_file(&tmp);
+            io(source)
+        })
     }
 
     pub fn root(&self) -> &Path {

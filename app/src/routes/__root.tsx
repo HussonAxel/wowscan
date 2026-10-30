@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { createRootRouteWithContext, Link, Outlet, useMatchRoute } from '@tanstack/react-router'
-import { Command, Download, Gem, ScanSearch, Settings, Shirt, Swords } from 'lucide-react'
+import { Command, Download, Gem, PawPrint, ScanSearch, Settings, Shirt, Swords } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -78,6 +78,7 @@ function RootLayout() {
                   <NavItem to="/sets" icon={<Shirt />} label={t('nav.sets')} />
                   <NavItem to="/collections" icon={<Gem />} label={t('nav.collections')} />
                   <NavItem to="/raids" icon={<Swords />} label={t('nav.raids')} />
+                  <NavItem to="/mounts" icon={<PawPrint />} label={t('nav.mounts')} />
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -131,7 +132,7 @@ function NavItem({
   label,
   children,
 }: {
-  to: '/' | '/sets' | '/collections' | '/raids' | '/settings'
+  to: '/' | '/sets' | '/collections' | '/raids' | '/mounts' | '/settings'
   icon: React.ReactNode
   label: string
   children?: React.ReactNode

@@ -165,6 +165,53 @@ export interface CollectionStatus {
   characters: Character[]
 }
 
+export type MountCategory =
+  | 'raid'
+  | 'dungeon'
+  | 'reputation'
+  | 'quest'
+  | 'elite'
+  | 'drop'
+  | 'vendor'
+  | 'achievement'
+  | 'profession'
+  | 'pvp'
+  | 'event'
+  | 'promotion'
+  | 'tradingPost'
+  | 'other'
+
+export interface Mount {
+  id: number
+  spellId: number
+  /** Objet qui apprend la monture, s'il existe : il donne sa fiche. */
+  itemId: number | null
+  /** Fichier d'icône du sort : toutes les montures en ont un, même sans objet. */
+  icon: number | null
+  name: LocalizedString
+  source: LocalizedString
+  category: MountCategory
+  expansion: number
+  collected: boolean
+}
+
+export interface MountCollection {
+  /** Faux si l'export vient d'une version de l'addon sans les montures. */
+  exported: boolean
+  mounts: Mount[]
+}
+
+/** Fiche d'une monture ; sans objet, seule la description est connue. */
+export interface MountTooltip {
+  quality: Quality | string | null
+  level: LocalizedString | null
+  binding: LocalizedString | null
+  kind: LocalizedString | null
+  spells: LocalizedString[]
+  requirements: LocalizedString[]
+  description: LocalizedString | null
+}
+
 /** Progression d'un ensemble, par emplacement comme dans le jeu. */
 export interface SetCollection extends SetSummary {
   collected: number

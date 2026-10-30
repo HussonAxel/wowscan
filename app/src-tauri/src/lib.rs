@@ -15,6 +15,7 @@ use wowscan_core::cache::Cache;
 use wowscan_core::collection::{self, AddonState, Character, SetProgress};
 use wowscan_core::gamedata::{BossDrop, GameData, SetCategory, SetRaid, Source, Variant};
 use wowscan_core::items::{self, ItemInfo};
+use wowscan_core::mounts::{self, Mount, MountTooltip};
 use wowscan_core::optimize::{self, Plan, PlanInput};
 use wowscan_core::realms::{self, ConnectedRealm};
 use wowscan_core::model::LocalizedString;
@@ -354,6 +355,47 @@ async fn collection_sets(state: State<'_, AppState>, game_dir: Option<String>) -
         .collect())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MountEntry {
+    #[serde(flatten)]
+    mount: Mount,
+    collected: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MountCollection {
+    /// Faux si l'export vient d'une version de l'addon sans les montures.
+    exported: bool,
+    mounts: Vec<MountEntry>,
+}
+
+/// Montures du jeu et celles collectées d'après le dernier export de l'addon.
+#[tauri::command]
+async fn collection_mounts(state: State<'_, AppState>, game_dir: Option<String>) -> CommandResult<MountCollection> {
+    let dir = self::game_dir(game_dir).ok_or_else(CommandError::game_not_found)?;
+    let collected = collection::read(&dir)?.and_then(|e| e.mounts);
+    let data = state.gamedata().await?;
+    Ok(MountCollection {
+        exported: collected.is_some(),
+        mounts: data
+            .mounts()
+            .iter()
+            .map(|mount| MountEntry {
+                collected: collected.as_ref().is_some_and(|ids| ids.contains(&mount.id)),
+                mount: mount.clone(),
+            })
+            .collect(),
+    })
+}
+
+#[tauri::command]
+async fn mount_tooltip(state: State<'_, AppState>, mount_id: u32, item_id: Option<u32>) -> CommandResult<MountTooltip> {
+    let client = state.client().await?;
+    Ok(mounts::mount_tooltip(&client, &state.cache, mount_id, item_id).await?)
+}
+
 /// Lance un scan ; l'avancement arrive par `on_event`, le résultat à la fin.
 #[tauri::command]
 async fn scan_items(
@@ -377,8 +419,32 @@ fn plan_purchases(input: PlanInput) -> Plan {
     optimize::plan(&input)
 }
 
+/// Icône d'un pack installé, d'après `wowicon://localhost/<nom ou fichier du jeu>?dir=<dossier du jeu>`.
+async fn pack_icon(state: &AppState, uri: &str) -> Option<Vec<u8>> {
+    let url = tauri::Url::parse(uri).ok()?;
+    let dir = PathBuf::from(url.query_pairs().find(|(key, _)| key == "dir")?.1.into_owned());
+    let file = url.path().trim_start_matches('/');
+    let name = match file.parse::<u32>() {
+        Ok(id) => state.gamedata().await.ok()?.icon_name(id)?.to_owned(),
+        Err(_) => file.to_owned(),
+    };
+    tauri::async_runtime::spawn_blocking(move || wowscan_core::icons::hd_icon_png(&dir, &name)).await.ok()?
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol("wowicon", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let uri = request.uri().to_string();
+            tauri::async_runtime::spawn(async move {
+                let builder = tauri::http::Response::builder();
+                let response = match pack_icon(&app.state::<AppState>(), &uri).await {
+                    Some(png) => builder.header("Content-Type", "image/png").header("Cache-Control", "max-age=86400").body(png),
+                    None => builder.status(404).body(Vec::new()),
+                };
+                responder.respond(response.expect("réponse valide"));
+            });
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -401,6 +467,8 @@ pub fn run() {
             collection_status,
             install_addon,
             collection_sets,
+            collection_mounts,
+            mount_tooltip,
             connected_realms,
             item_infos,
             scan_items,
